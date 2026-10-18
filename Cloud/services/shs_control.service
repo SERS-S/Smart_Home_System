@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - Control placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_control
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

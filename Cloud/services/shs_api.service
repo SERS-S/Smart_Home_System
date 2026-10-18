@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - API placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_api
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

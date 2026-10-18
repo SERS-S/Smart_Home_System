@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - AI Assistant placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_ai-assistant
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

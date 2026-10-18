@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - Voice placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_voice
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

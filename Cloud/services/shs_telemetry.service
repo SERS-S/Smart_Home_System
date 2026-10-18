@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - Telemetry placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_telemetry
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

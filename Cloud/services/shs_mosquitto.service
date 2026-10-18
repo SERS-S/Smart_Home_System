@@ -1,0 +1,10 @@
+[Unit]
+Description=Smart Home System - Mosquitto placeholder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shs_cloud_mosquitto
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
