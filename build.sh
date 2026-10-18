@@ -5,7 +5,7 @@ set -euo pipefail
 # # # UPLOAD VARIABLES
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -f "$SCRIPT_DIR/Cloud/.env" ]]; then
+if [[ "${1:-}" == cloud && -f "$SCRIPT_DIR/Cloud/.env" ]]; then
     set -a
     source "$SCRIPT_DIR/Cloud/.env"
     set +a
@@ -22,6 +22,75 @@ run_step() {
         printf ' > %s\n' "$label"
         "$@"
     fi
+}
+
+device_idf() {
+    local label="$1"
+    local project_dir="$2"
+    shift 2
+
+    local command=()
+    if [[ -n "${IDF_PATH:-}" && -n "${IDF_PYTHON_ENV_PATH:-}" && \
+          -f "$IDF_PATH/tools/idf.py" && -x "$IDF_PYTHON_ENV_PATH/bin/python" ]]; then
+        command=("$IDF_PYTHON_ENV_PATH/bin/python" "$IDF_PATH/tools/idf.py")
+    else
+        local activate_script="${ESP_IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.0.3.sh}"
+        if [[ ! -f "$activate_script" ]]; then
+            printf ' !> ESP-IDF is not active. Set ESP_IDF_ACTIVATE to the path of its activation script: %s\n' "$activate_script" >&2
+            return 1
+        fi
+        # EIM's activation script must be sourced from a shell named "bash".
+        # EIM may return a failure after activation if its optional selection sync fails.
+        command=(bash -c '. "$1" >/dev/null; shift; type idf.py >/dev/null 2>&1 || exit 1; idf.py "$@"' bash "$activate_script")
+    fi
+
+    if [[ -n "$label" ]]; then
+        run_step "$label" "${command[@]}" -C "$project_dir" "$@"
+    else
+        "${command[@]}" -C "$project_dir" "$@"
+    fi
+}
+
+device_port() {
+    local port="${1:-${ESP_PORT:-}}"
+    if [[ -z "$port" ]]; then
+        printf ' !> Specify a serial port, for example /dev/cu.usbserial-0001, or set ESP_PORT.\n' >&2
+        return 2
+    fi
+    if [[ ! -e "$port" ]]; then
+        printf ' !> Serial port does not exist: %s\n' "$port" >&2
+        return 2
+    fi
+    printf '%s\n' "$port"
+}
+
+device_build() {
+    local project_dir="$1"
+    local device_name="$2"
+
+    printf ' > Start building %s\n' "$device_name"
+    device_idf "Сборка $device_name" "$project_dir" build
+    printf ' > Finished building %s\n' "$device_name"
+}
+
+device_flash() {
+    local project_dir="$1"
+    local device_name="$2"
+    local port="$3"
+    local baud="$4"
+
+    printf ' > Flashing %s on %s at %s baud\n' "$device_name" "$port" "$baud"
+    device_idf "Прошивка $device_name" "$project_dir" -p "$port" -b "$baud" flash
+    printf ' > Finished flashing %s\n' "$device_name"
+}
+
+device_monitor() {
+    local project_dir="$1"
+    local device_name="$2"
+    local port="$3"
+
+    printf ' > Opening %s monitor on %s (exit: Ctrl+])\n' "$device_name" "$port"
+    device_idf '' "$project_dir" -p "$port" monitor
 }
 
 cloud_build() {
@@ -177,38 +246,50 @@ if [ "$#" -ge 1 ]; then
 
         printf " >>> Device action\n\n"
         if [[ -z "${2:-}" ]]; then
-            printf ' !> Missing device type. Usage: %s device {light|temperature|hab|motor}\n' "${0##*/}" >&2
+            printf ' !> Usage: %s device {light|temperature|hab|motor} [build|flash|monitor|flash-monitor] [serial-port]\n' "${0##*/}" >&2
             exit 2
         fi
 
-        if [[ "${2:-}" == "light" ]]; then
-            printf " > Start building Light Sensor\n"
+        local_device_dir=''
+        local_device_name=''
+        case "$2" in
+            light)       local_device_dir=LightSensor;       local_device_name='Light Sensor' ;;
+            temperature) local_device_dir=TemperatureSensor; local_device_name='Temperature Sensor' ;;
+            hab)         local_device_dir=Hab;               local_device_name=HAB ;;
+            motor)       local_device_dir=Motor;             local_device_name=Motor ;;
+            *) printf ' !> Unknown device type: %s\n' "$2" >&2; exit 2 ;;
+        esac
 
-            sleep 1
-
-            printf " > Finished building Light Sensor\n"
-        elif [[ "${2:-}" == "temperature" ]]; then
-            printf " > Start building Temperature Sensor\n"
-
-            sleep 1
-
-            printf " > Finished building Temperature Sensor\n"
-        elif [[ "${2:-}" == "hab" ]]; then
-            printf " > Start building HAB\n"
-
-            sleep 1
-
-            printf " > Finished building HAB\n"
-        elif [[ "${2:-}" == "motor" ]]; then
-            printf " > Start deploying Motor\n"
-
-            sleep 1
-
-            printf " > Finished deploying Motor\n"
-        else
-            printf ' !> Unknown device type: %s\n' "$2" >&2
-            exit 2
+        project_dir="$SCRIPT_DIR/Devices/$local_device_dir"
+        if [[ ! -f "$project_dir/CMakeLists.txt" ]]; then
+            printf ' !> ESP-IDF project not found: %s\n' "$project_dir" >&2
+            exit 1
         fi
+
+        action="${3:-build}"
+        case "$action" in
+            build)
+                device_build "$project_dir" "$local_device_name"
+                ;;
+            flash|monitor|flash-monitor)
+                port="$(device_port "${4:-}")"
+                if [[ "$action" == monitor ]]; then
+                    device_monitor "$project_dir" "$local_device_name" "$port"
+                else
+                    baud="${ESP_BAUD:-115200}"
+                    if [[ ! "$baud" =~ ^[0-9]+$ || "$baud" == 0 ]]; then
+                        printf ' !> ESP_BAUD must be a positive integer.\n' >&2
+                        exit 2
+                    fi
+                    device_build "$project_dir" "$local_device_name"
+                    device_flash "$project_dir" "$local_device_name" "$port" "$baud"
+                    if [[ "$action" == flash-monitor ]]; then
+                        device_monitor "$project_dir" "$local_device_name" "$port"
+                    fi
+                fi
+                ;;
+            *) printf ' !> Unknown device action: %s\n' "$action" >&2; exit 2 ;;
+        esac
 
     else
         printf ' !> Unknown command type: %s\n' "$1" >&2

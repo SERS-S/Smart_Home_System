@@ -1,3 +1,8 @@
 Cloud/.env
 Cloud/build
 Cloud/build-linux-x86_64
+.vscode
+Devices/*/build/
+Devices/*/sdkconfig
+esp
+eim_config.toml
