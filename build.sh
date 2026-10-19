@@ -2,6 +2,128 @@
 
 set -euo pipefail
 
+# # # DOWNLOAD DEPENDENCIES
+printf " >>> Checking dependencies\n\n"
+case "$(uname -s)" in
+    Darwin)
+        # MacOS
+        if ! xcode-select -p >/dev/null 2>&1; then
+            xcode-select --install
+            printf 'Finish installing Command Line Tools, then run the script again.\n' >&2
+            exit 1
+        fi
+
+        brew_path="$(command -v brew || true)"
+        if [[ -z "$brew_path" && -x /opt/homebrew/bin/brew ]]; then
+            brew_path=/opt/homebrew/bin/brew
+        elif [[ -z "$brew_path" && -x /usr/local/bin/brew ]]; then
+            brew_path=/usr/local/bin/brew
+        fi
+        if [[ -z "$brew_path" ]]; then
+            brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            /bin/bash -c "$brew_installer"
+            if [[ -x /opt/homebrew/bin/brew ]]; then
+                brew_path=/opt/homebrew/bin/brew
+            elif [[ -x /usr/local/bin/brew ]]; then
+                brew_path=/usr/local/bin/brew
+            else
+                printf 'Homebrew was not found after installation.\n' >&2
+                exit 1
+            fi
+        fi
+        brew_env="$("$brew_path" shellenv)"
+        eval "$brew_env"
+
+        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass; do
+            if ! brew list --formula --versions "$formula" >/dev/null 2>&1; then
+                brew install "$formula"
+            fi
+        done
+
+        if ! command -v eim >/dev/null 2>&1; then
+            brew tap espressif/eim
+            if brew help trust >/dev/null 2>&1; then
+                brew trust --formula espressif/eim/eim
+            fi
+            brew install eim
+        fi
+
+        idf_activate="${ESP_IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.0.3.sh}"
+        if [[ ! -f "$idf_activate" ]]; then
+            (cd "$HOME" && eim install -i v6.0.3)
+            if [[ ! -f "$idf_activate" ]]; then
+                printf 'ESP-IDF activation script was not found: %s\n' "$idf_activate" >&2
+                exit 1
+            fi
+        fi
+        ;;
+    Linux)
+        # Linux
+        brew_path="$(command -v brew || true)"
+        if [[ -z "$brew_path" && -x /home/linuxbrew/.linuxbrew/bin/brew ]]; then
+            brew_path=/home/linuxbrew/.linuxbrew/bin/brew
+        fi
+        if [[ -z "$brew_path" ]]; then
+            if [[ "$(id -u)" -eq 0 ]]; then
+                package_command=()
+            else
+                package_command=(sudo)
+            fi
+            if command -v apt-get >/dev/null 2>&1; then
+                "${package_command[@]}" apt-get update
+                "${package_command[@]}" apt-get install -y build-essential procps curl file git
+            elif command -v dnf >/dev/null 2>&1; then
+                "${package_command[@]}" dnf group install -y development-tools
+                "${package_command[@]}" dnf install -y procps-ng curl file git
+            elif command -v pacman >/dev/null 2>&1; then
+                "${package_command[@]}" pacman -S --needed --noconfirm base-devel procps-ng curl file git
+            else
+                printf 'Install Homebrew prerequisites first: no supported Linux package manager found.\n' >&2
+                exit 1
+            fi
+
+            brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            /bin/bash -c "$brew_installer"
+            brew_path=/home/linuxbrew/.linuxbrew/bin/brew
+            if [[ ! -x "$brew_path" ]]; then
+                printf 'Homebrew was not found after installation.\n' >&2
+                exit 1
+            fi
+        fi
+        brew_env="$("$brew_path" shellenv)"
+        eval "$brew_env"
+
+        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass; do
+            if ! brew list --formula --versions "$formula" >/dev/null 2>&1; then
+                brew install "$formula"
+            fi
+        done
+
+        if ! command -v eim >/dev/null 2>&1; then
+            brew tap espressif/eim
+            if brew help trust >/dev/null 2>&1; then
+                brew trust --formula espressif/eim/eim
+            fi
+            brew install eim
+        fi
+
+        idf_activate="${ESP_IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.0.3.sh}"
+        if [[ ! -f "$idf_activate" ]]; then
+            (cd "$HOME" && eim install -i v6.0.3)
+            if [[ ! -f "$idf_activate" ]]; then
+                printf 'ESP-IDF activation script was not found: %s\n' "$idf_activate" >&2
+                exit 1
+            fi
+        fi
+
+        ;;
+    *)
+        printf "  > > Unsupported OS: $(uname -s)\n" >&2
+        exit 1
+        ;;
+esac
+# # #
+
 # # # UPLOAD VARIABLES
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
