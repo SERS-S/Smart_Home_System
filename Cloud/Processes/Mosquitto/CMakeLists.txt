@@ -9,6 +9,8 @@ set(WITH_WEBSOCKETS OFF)
 set(WITH_HTTP_API OFF)
 set(WITH_THREADING ON)
 set(INC_MEMTRACK ON)
+set(WITH_LIB_CPP OFF)
+set(WITH_STATIC_LIBRARIES ON)
 
 include(CheckIncludeFiles)
 include(CheckSourceCompiles)
@@ -31,6 +33,7 @@ target_include_directories(common-options INTERFACE
 
 add_subdirectory(upstream/libcommon libcommon)
 add_subdirectory(upstream/src broker)
+add_subdirectory(upstream/lib client EXCLUDE_FROM_ALL)
 # Vendored spdlog v1.15.3, built from headers for the Linux cross target.
 add_subdirectory(spdlog EXCLUDE_FROM_ALL)
 
@@ -53,11 +56,14 @@ if(NOT mosquitto_anonymous_allow STREQUAL "true" AND
     message(FATAL_ERROR "MOSQUITTO_ANONYMOUS_ALLOW must be true or false")
 endif()
 
-target_compile_definitions(shs_cloud_mosquitto PRIVATE
+add_library(shs_mosquitto_endpoint INTERFACE)
+target_compile_definitions(shs_mosquitto_endpoint INTERFACE
     "MOSQUITTO_HOST=\"${mosquitto_host}\""
     "MOSQUITTO_PORT=${mosquitto_port}"
-    "MOSQUITTO_ANONYMOUS_ALLOW=${mosquitto_anonymous_allow}"
 )
+target_link_libraries(shs_cloud_mosquitto PRIVATE shs_mosquitto_endpoint)
+target_compile_definitions(shs_cloud_mosquitto PRIVATE
+    "MOSQUITTO_ANONYMOUS_ALLOW=${mosquitto_anonymous_allow}")
 
 target_link_libraries(shs_cloud_mosquitto PRIVATE
     mosquitto libmosquitto_common cJSON spdlog::spdlog_header_only

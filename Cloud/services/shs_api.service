@@ -1,10 +1,15 @@
 [Unit]
-Description=Smart Home System - API placeholder
+Description=Smart Home System - weather API publisher
+Wants=network-online.target
+Requires=shs_mosquitto.service
+After=network-online.target shs_mosquitto.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/shs_cloud_api
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10s
 
 [Install]
 WantedBy=multi-user.target
