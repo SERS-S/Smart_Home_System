@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(SmartHomeSystemCloud LANGUAGES CXX)
+project(SmartHomeSystemCloud LANGUAGES C CXX)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PROCESSES
     AI-Assistant
     Api
     Control
-    Mosquitto
     Telemetry
     Voice
 )
@@ -22,3 +23,5 @@ foreach(process IN LISTS PROCESSES)
     target_compile_features(${target} PRIVATE cxx_std_17)
     install(TARGETS ${target} RUNTIME DESTINATION bin)
 endforeach()
+
+add_subdirectory("../Processes/Mosquitto" "${CMAKE_CURRENT_BINARY_DIR}/mosquitto")

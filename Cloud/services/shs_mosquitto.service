@@ -1,10 +1,9 @@
 [Unit]
-Description=Smart Home System - Mosquitto placeholder
+Description=Smart Home System - Mosquitto broker
 
 [Service]
-Type=oneshot
-ExecStart=/usr/local/bin/shs_cloud_mosquitto
-RemainAfterExit=yes
+Type=simple
+ExecStart=/usr/local/bin/shs_cloud_mosquitto -c /etc/mosquitto/mosquitto.conf
 
 [Install]
 WantedBy=multi-user.target
