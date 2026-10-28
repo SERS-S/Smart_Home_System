@@ -6,3 +6,9 @@ Devices/*/build/
 Devices/*/sdkconfig
 esp
 eim_config.toml
+
+# build artifact
+Devices/*/managed_components/
+
+# secrets
+Devices/*/main/secrets.h
