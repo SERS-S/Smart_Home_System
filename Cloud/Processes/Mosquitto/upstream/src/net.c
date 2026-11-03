@@ -799,11 +799,31 @@ static int net__bind_interface(struct mosquitto__listener *listener, struct addr
 #endif
 
 
+static bool net__listener_address_equal(const struct addrinfo *left, const struct addrinfo *right)
+{
+	if(left->ai_family != right->ai_family){
+		return false;
+	}
+	if(left->ai_family == AF_INET){
+		const struct sockaddr_in *a = (const struct sockaddr_in *)left->ai_addr;
+		const struct sockaddr_in *b = (const struct sockaddr_in *)right->ai_addr;
+		return a->sin_port == b->sin_port && a->sin_addr.s_addr == b->sin_addr.s_addr;
+	}else if(left->ai_family == AF_INET6){
+		const struct sockaddr_in6 *a = (const struct sockaddr_in6 *)left->ai_addr;
+		const struct sockaddr_in6 *b = (const struct sockaddr_in6 *)right->ai_addr;
+		return a->sin6_port == b->sin6_port
+			&& a->sin6_scope_id == b->sin6_scope_id
+			&& !memcmp(&a->sin6_addr, &b->sin6_addr, sizeof(a->sin6_addr));
+	}
+	return false;
+}
+
+
 static int net__socket_listen_tcp(struct mosquitto__listener *listener)
 {
 	mosq_sock_t sock = INVALID_SOCKET;
 	struct addrinfo hints;
-	struct addrinfo *ainfo, *rp;
+	struct addrinfo *ainfo, *rp, *previous;
 	char service[10];
 	int rc;
 	int ss_opt = 1;
@@ -835,6 +855,17 @@ static int net__socket_listen_tcp(struct mosquitto__listener *listener)
 	listener->socks = NULL;
 
 	for(rp = ainfo; rp; rp = rp->ai_next){
+		/* Resolver results can repeat an address, e.g. duplicate localhost
+		 * entries in /etc/hosts. Binding it twice would stop the broker. */
+		for(previous = ainfo; previous != rp; previous = previous->ai_next){
+			if(net__listener_address_equal(previous, rp)){
+				break;
+			}
+		}
+		if(previous != rp){
+			continue;
+		}
+
 		if(rp->ai_family == AF_INET){
 			log__printf(NULL, MOSQ_LOG_INFO, "Opening ipv4 listen socket on port %d.", ntohs(((struct sockaddr_in *)rp->ai_addr)->sin_port));
 		}else if(rp->ai_family == AF_INET6){

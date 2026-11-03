@@ -3,6 +3,7 @@ Description=Smart Home System - Mosquitto broker
 
 [Service]
 Type=simple
+ConfigurationDirectory=mosquitto
 ExecStart=/usr/local/bin/shs_cloud_mosquitto -c /etc/mosquitto/mosquitto.conf
 
 [Install]

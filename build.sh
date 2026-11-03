@@ -366,7 +366,7 @@ cloud_deploy() {
                     exit 1
                 fi
             done
-            install -d /usr/local/bin /usr/local/lib/smart-home /usr/local/share/smart-home/models
+            install -d /etc/mosquitto /usr/local/bin /usr/local/lib/smart-home /usr/local/share/smart-home/models
 EOF
 
         printf " > > Stopping Cloud services\n"
@@ -424,13 +424,24 @@ EOF
         printf " > > Starting Cloud services\n"
         sshpass -p "$PASSWORD" ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" 'bash -s' <<'EOF'
             set -euo pipefail
-        
-            systemctl start shs_mosquitto.service; printf "  > > > Started shs_mosquitto.service\n"
-            systemctl start shs_control.service; printf "  > > > Started shs_control.service\n"
-            systemctl start shs_telemetry.service; printf "  > > > Started shs_telemetry.service\n"
-            systemctl start shs_voice.service; printf "  > > > Started shs_voice.service\n"
-            systemctl start shs_api.service; printf "  > > > Started shs_api.service\n"
-            systemctl start shs_ai-assistant.service; printf "  > > > Started shs_ai-assistant.service\n"
+
+            start_service() {
+                local service="$1"
+                if ! systemctl start "$service" || ! systemctl is-active --quiet "$service"; then
+                    printf ' !> Failed to start %s\n' "$service" >&2
+                    systemctl status "$service" --no-pager --full >&2 || true
+                    journalctl -u "$service" -n 30 --no-pager -o cat >&2 || true
+                    return 1
+                fi
+                printf '  > > > Started %s\n' "$service"
+            }
+
+            start_service shs_mosquitto.service
+            start_service shs_control.service
+            start_service shs_telemetry.service
+            start_service shs_voice.service
+            start_service shs_api.service
+            start_service shs_ai-assistant.service
 EOF
 
         printf "\n"
