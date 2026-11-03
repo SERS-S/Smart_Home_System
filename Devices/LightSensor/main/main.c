@@ -24,16 +24,21 @@
 #include "secrets.h"
 
 // ---------- Configuration ----------
-#define MQTT_TOPIC      "telemetry/home/light/data"
-#define DEVICE_ID       "light_sensor_01"
+#define MQTT_TOPIC_DATA      "telemetry/home/light/data"
+#define MQTT_TOPIC_INFO      "telemetry/home/light/info"
+#define DEVICE_ID            "light_sensor_01"
+#define VERSION              "0.1"
 
 #define SENSOR_ADC_UNIT       ADC_UNIT_1
 #define SENSOR_ADC_CHANNEL    ADC_CHANNEL_6  // GPIO34
+#define VOLTAGE_ADC_CHANNEL   ADC_CHANNEL_4  // GPIO32
 
 #define PUBLISH_PERIOD_MS     60000
 
-// Temporary coefficient
+// Scaling coefficient
 #define LUX_PER_ADC_COUNT     1.0f
+#define MAX_VOLT              4095
+#define VOLT_PER_ADC_COUNT    3.0 / MAX_VOLT
 
 // ---------- State ----------
 
@@ -71,6 +76,14 @@ static void sensor_init(void)
         adc_oneshot_config_channel(
             adc_handle,
             SENSOR_ADC_CHANNEL,
+            &channel_config
+        )
+    );
+
+    ESP_ERROR_CHECK(
+        adc_oneshot_config_channel(
+            adc_handle,
+            VOLTAGE_ADC_CHANNEL,
             &channel_config
         )
     );
@@ -265,6 +278,95 @@ static void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
+// ---------- Info ----------
+
+static float raw_to_volt(int raw)
+{
+    if (raw == MAX_VOLT) {
+        return 3.3;
+    }
+    return VOLT_PER_ADC_COUNT * (float)raw;
+}
+
+static void publish_info(void)
+{
+    int raw = 0;
+
+    esp_err_t err = adc_oneshot_read(
+        adc_handle,
+        VOLTAGE_ADC_CHANNEL,
+        &raw
+    );
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Voltage ADC read failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "Voltage ADC raw: %d", raw);
+
+    float voltage = raw_to_volt(raw);
+
+    ESP_LOGI(TAG, "Voltage ADC volt: %f", voltage);
+
+    cJSON *root = cJSON_CreateObject();
+
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Failed to create JSON");
+        return;
+    }
+
+
+    cJSON_AddStringToObject(root, "device_id", DEVICE_ID);
+    cJSON_AddNumberToObject(root, "voltage", voltage);
+    cJSON_AddStringToObject(root, "vresion", VERSION);
+
+    char *payload = cJSON_PrintUnformatted(root);
+
+    if (payload == NULL) {
+        ESP_LOGE(TAG, "Failed to serialize JSON");
+        cJSON_Delete(root);
+        return;
+    }
+
+    int msg_id = esp_mqtt_client_publish(
+        mqtt_client,
+        MQTT_TOPIC_INFO,
+        payload,
+        0,
+        1,
+        0
+    );
+
+    if (msg_id >= 0) {
+        ESP_LOGI(TAG, "Published to %s: %s", MQTT_TOPIC_INFO, payload);
+    } else {
+        ESP_LOGE(TAG, "MQTT publish failed");
+    }
+
+    cJSON_free(payload);
+    cJSON_Delete(root);
+}
+
+static void info_task(void *args)
+{
+    (void)args;
+
+    xEventGroupWaitBits(
+        event_group,
+        MQTT_CONNECTED_BIT | TIME_SYNCED_BIT,
+        pdFALSE,
+        pdTRUE,
+        portMAX_DELAY
+    );
+
+    while (1) {
+        publish_info();
+        vTaskDelay(pdMS_TO_TICKS(PUBLISH_PERIOD_MS));
+    }
+}
+
 // ---------- Telemetry ----------
 
 static void publish_telemetry(void)
@@ -315,7 +417,7 @@ static void publish_telemetry(void)
 
     int msg_id = esp_mqtt_client_publish(
         mqtt_client,
-        MQTT_TOPIC,
+        MQTT_TOPIC_DATA,
         payload,
         0,
         1,
@@ -323,7 +425,7 @@ static void publish_telemetry(void)
     );
 
     if (msg_id >= 0) {
-        ESP_LOGI(TAG, "Published to %s: %s", MQTT_TOPIC, payload);
+        ESP_LOGI(TAG, "Published to %s: %s", MQTT_TOPIC_DATA, payload);
     } else {
         ESP_LOGE(TAG, "MQTT publish failed");
     }
@@ -331,8 +433,6 @@ static void publish_telemetry(void)
     cJSON_free(payload);
     cJSON_Delete(root);
 }
-
-// ---------- Application ----------
 
 static void telemetry_task(void *arg)
 {
@@ -391,6 +491,17 @@ void app_main(void)
     if (xTaskCreate(
             telemetry_task,
             "telemetry",
+            4096,
+            NULL,
+            5,
+            NULL
+        ) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create telemetry task");
+    }
+
+    if (xTaskCreate(
+            info_task,
+            "info",
             4096,
             NULL,
             5,
