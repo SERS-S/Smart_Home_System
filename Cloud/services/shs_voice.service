@@ -1,10 +1,12 @@
 [Unit]
-Description=Smart Home System - Voice placeholder
+Description=Smart Home System - Voice recognition
+After=network.target
 
 [Service]
-Type=oneshot
-ExecStart=/usr/local/bin/shs_cloud_voice
-RemainAfterExit=yes
+Type=simple
+ExecStart=/usr/local/bin/shs_cloud_voice /usr/local/share/smart-home/models/vosk-model-small-ru-0.22
+Restart=on-failure
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

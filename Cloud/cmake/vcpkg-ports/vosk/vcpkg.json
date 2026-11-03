@@ -1,0 +1,8 @@
+{
+  "name": "vosk",
+  "version": "0.3.45",
+  "description": "Prebuilt Vosk library for Linux x64",
+  "homepage": "https://alphacephei.com/vosk/",
+  "license": "Apache-2.0",
+  "supports": "linux & x64 & !staticcrt"
+}

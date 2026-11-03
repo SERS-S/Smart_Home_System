@@ -10,12 +10,17 @@ set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> ranlib <TARGET>")
 set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> ar qc <TARGET> <OBJECTS>")
 set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> ranlib <TARGET>")
 
+# Mosquitto without TLS uses getrandom(), available in glibc 2.25 and newer.
 set(CMAKE_C_COMPILER
-    "${ZIG_EXECUTABLE}" cc -target x86_64-linux-musl
+    "${ZIG_EXECUTABLE}" cc -target x86_64-linux-gnu.2.25
 )
 
 set(CMAKE_CXX_COMPILER
-    "${ZIG_EXECUTABLE}" c++ -target x86_64-linux-musl
+    "${ZIG_EXECUTABLE}" c++ -target x86_64-linux-gnu.2.25
 )
 
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
+# Boost.Context contains assembly; CMake must invoke `zig cc`, not bare `zig`.
+set(CMAKE_ASM_COMPILER "${ZIG_EXECUTABLE}")
+set(CMAKE_ASM_COMPILER_ARG1 "cc -target x86_64-linux-gnu.2.25")
+
+set(CMAKE_EXE_LINKER_FLAGS_INIT "")

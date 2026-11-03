@@ -219,6 +219,34 @@ cloud_build() {
     local cloud_dir="$SCRIPT_DIR/Cloud"
     local build_dir="$cloud_dir/build-linux-x86_64"
     local color_diagnostics=OFF
+    local vcpkg_root="$cloud_dir/vcpkg"
+
+    if [[ ! -d "$vcpkg_root/.git" ]]; then
+        run_step 'Загрузка vcpkg' git clone \
+            https://github.com/microsoft/vcpkg.git "$vcpkg_root" || return 1
+    fi
+
+    if [[ ! -f "$vcpkg_root/scripts/buildsystems/vcpkg.cmake" || \
+          ! -f "$vcpkg_root/bootstrap-vcpkg.sh" ]]; then
+        printf ' !> Incomplete vcpkg checkout: %s\n' "$vcpkg_root" >&2
+        return 1
+    fi
+
+    # Keep vcpkg and all of its package data inside this project checkout.
+    export VCPKG_ROOT="$vcpkg_root"
+    export VCPKG_DOWNLOADS="$vcpkg_root/downloads"
+    export VCPKG_DEFAULT_BINARY_CACHE="$vcpkg_root/binary-cache"
+    export VCPKG_BINARY_SOURCES="clear;files,$VCPKG_DEFAULT_BINARY_CACHE,readwrite"
+    export X_VCPKG_REGISTRIES_CACHE="$vcpkg_root/registries"
+    export X_VCPKG_ASSET_SOURCES=clear
+    export VCPKG_DISABLE_METRICS=1
+    unset VCPKG_OVERLAY_PORTS VCPKG_OVERLAY_TRIPLETS VCPKG_DEFAULT_HOST_TRIPLET
+
+    mkdir -p "$VCPKG_DOWNLOADS" "$VCPKG_DEFAULT_BINARY_CACHE" "$X_VCPKG_REGISTRIES_CACHE"
+
+    if [[ ! -x "$vcpkg_root/vcpkg" ]]; then
+        run_step 'Подготовка vcpkg' bash "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics || return 1
+    fi
 
     mkdir -p "$build_dir/zig-cache"
     export ZIG_GLOBAL_CACHE_DIR="$build_dir/zig-cache"
@@ -229,7 +257,11 @@ cloud_build() {
 
     run_step 'Настройка CMake' cmake -S "$cloud_dir/cmake" -B "$build_dir" \
         -G "Unix Makefiles" \
-        -DCMAKE_TOOLCHAIN_FILE="$cloud_dir/cmake/linux-x86_64.cmake" \
+        -DCMAKE_TOOLCHAIN_FILE="$vcpkg_root/scripts/buildsystems/vcpkg.cmake" \
+        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$cloud_dir/cmake/linux-x86_64.cmake" \
+        -DVCPKG_OVERLAY_TRIPLETS="$cloud_dir/cmake/vcpkg-triplets" \
+        -DVCPKG_TARGET_TRIPLET=x64-linux-zig \
+        -DVCPKG_INSTALLED_DIR="$vcpkg_root/installed" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_COLOR_DIAGNOSTICS="$color_diagnostics" \
         --fresh &&
@@ -255,14 +287,16 @@ cloud_deploy() {
         done
 
         local binary
+        local binary_type
         local binaries=("$build_dir"/shs_cloud_*)
         for binary in "${binaries[@]}"; do
             if [[ ! -f "$binary" || ! -x "$binary" ]]; then
                 printf ' !> Missing executable: %s\n' "$binary" >&2
                 exit 1
             fi
-            if [[ "$(LC_ALL=C file -b "$binary")" != ELF* ]]; then
-                printf ' !> Linux deployment requires ELF binaries: %s. Rebuild Cloud with the Linux toolchain.\n' "$binary" >&2
+            binary_type="$(LC_ALL=C file -Lb "$binary")"
+            if [[ "$binary_type" != 'ELF 64-bit LSB'* || "$binary_type" != *x86-64* ]]; then
+                printf ' !> Linux deployment requires x86_64 ELF binaries: %s. Rebuild Cloud with the Linux toolchain.\n' "$binary" >&2
                 exit 1
             fi
         done
@@ -274,6 +308,66 @@ cloud_deploy() {
                 exit 1
             fi
         done
+
+        if [[ ! -s "$build_dir/lib/libvosk.so" ]]; then
+            printf ' !> Missing runtime library: %s\n' "$build_dir/lib/libvosk.so" >&2
+            exit 1
+        fi
+
+        local libraries=()
+        local library
+        for library in "$build_dir/lib/"*.so "$build_dir/lib/"*.so.*; do
+            if [[ -f "$library" ]]; then
+                binary_type="$(LC_ALL=C file -Lb "$library")"
+                if [[ "$binary_type" != 'ELF 64-bit LSB'* || "$binary_type" != *x86-64* ]]; then
+                    printf ' !> Linux deployment requires x86_64 ELF libraries: %s\n' "$library" >&2
+                    exit 1
+                fi
+                libraries+=("$library")
+            fi
+        done
+
+        local model_dir="$build_dir/models/vosk-model-small-ru-0.22"
+        local model_file
+        for model_file in am/final.mdl conf/model.conf graph/HCLr.fst; do
+            if [[ ! -s "$model_dir/$model_file" ]]; then
+                printf ' !> Missing Voice model file: %s\n' "$model_dir/$model_file" >&2
+                exit 1
+            fi
+        done
+
+        # Check the server before stopping any running services.
+        printf ' > > Checking server runtime\n'
+        sshpass -p "$PASSWORD" ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" 'bash -s' <<'EOF'
+            set -euo pipefail
+            if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+                printf 'Cloud requires a Linux x86_64 server.\n' >&2
+                exit 1
+            fi
+            glibc_version="$(getconf GNU_LIBC_VERSION)"
+            printf ' > > Server runtime: %s\n' "$glibc_version"
+            IFS=. read -r glibc_major glibc_minor glibc_patch <<< "${glibc_version##* }"
+            if (( glibc_major < 2 || (glibc_major == 2 && glibc_minor < 25) )); then
+                printf 'Cloud requires glibc 2.25 or newer.\n' >&2
+                exit 1
+            fi
+            command -v systemctl >/dev/null
+            runtime_linker=/lib64/ld-linux-x86-64.so.2
+            if [[ ! -x "$runtime_linker" ]]; then
+                printf 'The glibc runtime linker was not found: %s\n' "$runtime_linker" >&2
+                exit 1
+            fi
+            "$runtime_linker" --list /bin/true >/dev/null
+            # The library cache also contains dependencies used only by libvosk.
+            library_cache="$(PATH="$PATH:/sbin:/usr/sbin" ldconfig -p)"
+            for library in libstdc++.so.6 libgcc_s.so.1; do
+                if [[ "$library_cache" != *"$library"* ]]; then
+                    printf 'Missing %s; install the Linux C++ runtime packages first.\n' "$library" >&2
+                    exit 1
+                fi
+            done
+            install -d /usr/local/bin /usr/local/lib/smart-home /usr/local/share/smart-home/models
+EOF
 
         printf " > > Stopping Cloud services\n"
         sshpass -p "$PASSWORD" ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" 'bash -s' <<'EOF'
@@ -293,6 +387,14 @@ EOF
         run_step 'Загрузка бинарников' \
             scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
             "$build_dir"/shs_cloud_* "$REMOTE_USER@$REMOTE_HOST:/usr/local/bin/"
+
+        run_step 'Загрузка динамических библиотек' \
+            scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
+            "${libraries[@]}" "$REMOTE_USER@$REMOTE_HOST:/usr/local/lib/smart-home/"
+
+        run_step 'Загрузка модели Voice' \
+            scp -r -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
+            "$model_dir" "$REMOTE_USER@$REMOTE_HOST:/usr/local/share/smart-home/models/"
 
          printf "\n"
 

@@ -32,3 +32,60 @@ target_link_libraries(shs_cloud_api PRIVATE
 target_include_directories(shs_cloud_api PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../Processes/Mosquitto/upstream/include"
 )
+
+find_package(Boost CONFIG REQUIRED COMPONENTS beast asio system)
+find_package(Threads REQUIRED)
+
+find_path(VOSK_INCLUDE_DIR NAMES vosk_api.h)
+find_library(VOSK_LIBRARY NAMES vosk)
+
+if(NOT VOSK_INCLUDE_DIR OR NOT VOSK_LIBRARY)
+    message(FATAL_ERROR "Vosk header or library was not found")
+endif()
+
+add_library(Vosk::vosk SHARED IMPORTED)
+
+set_target_properties(Vosk::vosk PROPERTIES
+    IMPORTED_LOCATION "${VOSK_LIBRARY}"
+    # The official binary has no SONAME. Link with -lvosk so DT_NEEDED
+    # contains libvosk.so instead of a path into Cloud/vcpkg/installed.
+    IMPORTED_NO_SONAME TRUE
+    INTERFACE_INCLUDE_DIRECTORIES "${VOSK_INCLUDE_DIR}"
+)
+
+target_link_libraries(shs_cloud_voice PRIVATE
+    Boost::beast
+    Boost::asio
+    Boost::system
+    Threads::Threads
+    Vosk::vosk
+)
+
+# Пути поиска библиотек:
+# при локальном запуске — build/lib;
+# на сервере — /usr/local/lib/smart-home.
+set_target_properties(shs_cloud_voice PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN/lib;$ORIGIN/../lib/smart-home"
+)
+
+# Run on every build so deleting build/lib does not leave an otherwise
+# up-to-date executable without its runtime dependency.
+add_custom_target(shs_voice_runtime ALL
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+        "${CMAKE_BINARY_DIR}/lib"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:Vosk::vosk>"
+        "${CMAKE_BINARY_DIR}/lib/"
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSHS_VOICE_MODEL_ROOT=${CMAKE_BINARY_DIR}/models"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/prepare_voice_model.cmake"
+    DEPENDS "${VOSK_LIBRARY}"
+    VERBATIM
+)
+add_dependencies(shs_cloud_voice shs_voice_runtime)
+
+install(FILES "${VOSK_LIBRARY}" DESTINATION lib/smart-home)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/models/vosk-model-small-ru-0.22"
+    DESTINATION share/smart-home/models
+)
