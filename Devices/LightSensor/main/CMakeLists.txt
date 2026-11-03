@@ -5,6 +5,7 @@ idf_component_register(
         esp_adc
         mqtt
         esp_wifi
+        wpa_supplicant
         esp_event
         esp_netif
         nvs_flash

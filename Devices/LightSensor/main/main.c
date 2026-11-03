@@ -4,6 +4,7 @@
 #include <sys/time.h>
 
 #include "esp_log.h"
+#include "esp_eap_client.h"
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -27,11 +28,11 @@
 #define DEVICE_ID       "light_sensor_01"
 
 #define SENSOR_ADC_UNIT       ADC_UNIT_1
-#define SENSOR_ADC_CHANNEL    ADC_CHANNEL_6  // GPIO34, classic ESP32
+#define SENSOR_ADC_CHANNEL    ADC_CHANNEL_6  // GPIO34
 
 #define PUBLISH_PERIOD_MS     60000
 
-// Temporary coefficient. Must be calibrated for your sensor.
+// Temporary coefficient
 #define LUX_PER_ADC_COUNT     1.0f
 
 // ---------- State ----------
@@ -233,14 +234,34 @@ static void wifi_init(void)
         sizeof(wifi_config.sta.ssid)
     );
 
-    strlcpy(
-        (char *)wifi_config.sta.password,
-        WIFI_PASSWORD,
-        sizeof(wifi_config.sta.password)
-    );
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+
+    ESP_ERROR_CHECK(esp_wifi_sta_enterprise_enable());
+
+    ESP_ERROR_CHECK(
+        esp_eap_client_set_identity(
+            (const unsigned char *)WIFI_USERNAME,
+            strlen(WIFI_USERNAME)
+        )
+    );
+
+    ESP_ERROR_CHECK(
+        esp_eap_client_set_username(
+            (const unsigned char *)WIFI_USERNAME,
+            strlen(WIFI_USERNAME)
+        )
+    );
+
+    ESP_ERROR_CHECK(
+        esp_eap_client_set_password(
+            (const unsigned char *)WIFI_PASSWORD,
+            strlen(WIFI_PASSWORD)
+        )
+    );
+
+    ESP_ERROR_CHECK(esp_wifi_sta_enterprise_enable());
+
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
