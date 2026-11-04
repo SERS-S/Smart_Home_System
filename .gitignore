@@ -8,6 +8,10 @@ Devices/*/sdkconfig
 esp
 eim_config.toml
 scripts/test_cloud_deploy.py
+scripts/prepare_intellisense.py
+scripts/.venv-voice/
+scripts/__pycache__/
+scripts/test_voice_stream.py
 
 # build artifact
 Devices/*/managed_components/

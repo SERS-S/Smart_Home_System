@@ -3,14 +3,14 @@
 #include <boost/beast/websocket.hpp>
 
 #include <vosk_api.h>
+#include "mqtt_publisher.h"
 
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
-
-// #define
 
 namespace net = boost::asio;
 namespace beast = boost::beast;
@@ -19,7 +19,11 @@ using tcp = net::ip::tcp;
 
 using Recognizer = std::unique_ptr<VoskRecognizer, decltype(&vosk_recognizer_free)>;
 
-void receive_audio(tcp::socket socket, VoskModel* model)
+constexpr std::size_t SAMPLE_RATE = 16000;
+// Дополнительная пауза после сигнала Vosk о конце фразы, в миллисекундах.
+constexpr std::size_t ENDPOINT_GRACE_MS = 1000;
+
+void receive_audio(tcp::socket socket, VoskModel* model, voice::MqttPublisher& publisher)
 {
     websocket::stream<tcp::socket> ws(std::move(socket));
 
@@ -28,7 +32,7 @@ void receive_audio(tcp::socket socket, VoskModel* model)
     ws.accept();
 
     Recognizer recognizer(
-        vosk_recognizer_new(model, 16000.0f),
+        vosk_recognizer_new(model, static_cast<float>(SAMPLE_RATE)),
         &vosk_recognizer_free
     );
 
@@ -37,6 +41,7 @@ void receive_audio(tcp::socket socket, VoskModel* model)
     }
 
     beast::flat_buffer buffer;
+    std::size_t endpoint_samples = 0;
 
     for (;;) {
         buffer.consume(buffer.size());
@@ -78,28 +83,33 @@ void receive_audio(tcp::socket socket, VoskModel* model)
             throw std::runtime_error("Recognition failed");
         }
 
-        if (status == 1) {
-            // Завершённая фраза. Здесь можно публиковать MQTT.
-            const std::string result =
-                vosk_recognizer_result(recognizer.get());
+        // Считаем длительность поступившего PCM, а не время между пакетами.
+        // Пока Result не вызван, Vosk продолжает распознавать ту же фразу.
+        endpoint_samples = status == 1 ? endpoint_samples + data.size() / 2 : 0;
+
+        if (status == 1 && endpoint_samples * 1000 >= SAMPLE_RATE * ENDPOINT_GRACE_MS) {
+            // Публикуем только завершённую фразу.
+            const std::string result = vosk_recognizer_result(recognizer.get());
+            endpoint_samples = 0;
 
             std::cout << "Result: " << result << '\n';
+            publisher.publish_result(result);
         } else {
             // Гипотеза: при поступлении аудио она может измениться.
-            const std::string partial =
-                vosk_recognizer_partial_result(recognizer.get());
+            const std::string partial = vosk_recognizer_partial_result(recognizer.get());
 
             std::cout << "Partial: " << partial << '\n';
         }
     }
 
     // Получаем остаток фразы, даже если после неё не было паузы.
-    const std::string tail =
-        vosk_recognizer_final_result(recognizer.get());
+    const std::string tail = vosk_recognizer_final_result(recognizer.get());
 
     std::cout << "Final: " << tail << '\n';
+    publisher.publish_result(tail);
 
-    if (ws.is_open()) {
+    if (ws.is_open())
+    {
         ws.close(websocket::close_code::normal);
     }
 }
@@ -114,26 +124,47 @@ int main(int argc, char** argv)
 
     try
     {
-        // Модель загружается один раз на весь процесс.
-        std::unique_ptr<VoskModel, decltype(&vosk_model_free)> model(
+        const std::string listener_address = REMOTE_VOICE_HOST;
+        const unsigned short listener_port = REMOTE_VOICE_PORT;
+
+        std::unique_ptr<VoskModel, decltype(&vosk_model_free)> model
+        (
             vosk_model_new(argv[1]),
             &vosk_model_free
         );
 
-        if (!model) {
+        if (!model)
+        {
             throw std::runtime_error("Cannot load model");
         }
 
+        voice::MqttPublisher publisher;
         net::io_context io;
-        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 9002));
+        tcp::resolver resolver(io);
+        const auto endpoints = resolver.resolve(listener_address, std::to_string(listener_port), tcp::resolver::passive);
+        auto endpoint = endpoints.begin()->endpoint();
 
-        for (;;) {
+        for (const auto& candidate : endpoints)
+        {
+            if (candidate.endpoint().address().is_v4())
+            {
+                endpoint = candidate.endpoint();
+                break;
+            }
+        }
+        tcp::acceptor acceptor(io, endpoint);
+        std::cout << "Voice WebSocket listening on " << acceptor.local_endpoint() << std::endl;
+
+        for (;;)
+        {
             tcp::socket socket(io);
             acceptor.accept(socket);
 
-            try {
-                receive_audio(std::move(socket), model.get());
-            } catch (const std::exception& e) {
+            try
+            {
+                receive_audio(std::move(socket), model.get(), publisher);
+            }
+            catch (const std::exception& e) {
                 std::cerr << "Voice session: " << e.what() << '\n';
             }
         }

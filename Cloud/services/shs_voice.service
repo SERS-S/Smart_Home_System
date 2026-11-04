@@ -1,6 +1,7 @@
 [Unit]
 Description=Smart Home System - Voice recognition
-After=network.target
+Wants=shs_mosquitto.service
+After=network.target shs_mosquitto.service
 
 [Service]
 Type=simple

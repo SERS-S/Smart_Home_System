@@ -33,6 +33,21 @@ target_include_directories(shs_cloud_api PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../Processes/Mosquitto/upstream/include"
 )
 
+set(voice_host "$ENV{REMOTE_VOICE_HOST}")
+set(voice_port "$ENV{REMOTE_VOICE_PORT}")
+
+if(NOT voice_host MATCHES "^[A-Za-z0-9.:-]+$")
+    message(FATAL_ERROR "REMOTE_VOICE_HOST must be a hostname or IP address")
+endif()
+if(NOT voice_port MATCHES "^[1-9][0-9]*$" OR voice_port GREATER 65535)
+    message(FATAL_ERROR "REMOTE_VOICE_PORT must be between 1 and 65535")
+endif()
+
+target_compile_definitions(shs_cloud_voice PRIVATE
+    "REMOTE_VOICE_HOST=\"${voice_host}\""
+    "REMOTE_VOICE_PORT=${voice_port}"
+)
+
 find_package(Boost CONFIG REQUIRED COMPONENTS beast asio system)
 find_package(Threads REQUIRED)
 
@@ -54,11 +69,17 @@ set_target_properties(Vosk::vosk PROPERTIES
 )
 
 target_link_libraries(shs_cloud_voice PRIVATE
+    shs_mosquitto_endpoint
+    libmosquitto_static
+    cJSON
     Boost::beast
     Boost::asio
     Boost::system
     Threads::Threads
     Vosk::vosk
+)
+target_include_directories(shs_cloud_voice PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Processes/Mosquitto/upstream/include"
 )
 
 # Пути поиска библиотек:
