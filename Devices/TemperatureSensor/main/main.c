@@ -43,7 +43,11 @@ static i2c_master_dev_handle_t bmp280_handle;
 #define MQTT_TOPIC_DATA "telemetry/home/temperature/data"
 #define MQTT_TOPIC_INFO "telemetry/home/temperature/info"
 
-#define PUBLISH_PERIOD_MS 60000
+#define PUBLISH_PERIOD_MS 5000
+
+
+static EventGroupHandle_t connected_event_group;
+#define CONNECTED_BIT BIT0
 
 static int serial_number = 0;
 
@@ -264,9 +268,6 @@ static esp_err_t bmp280_init(void)
     return ESP_OK;
 }
 
-
-
-
 // Read compensated temperature in Celsius
 static esp_err_t bmp280_read_temperature(float *temperature)
 {
@@ -305,11 +306,6 @@ static esp_err_t bmp280_read_temperature(float *temperature)
     uint8_t regs[3];
 
     esp_err_t ret = bmp280_read_regs(0xF3, regs, sizeof(regs));
-
-
-
-
-
 
     if (ret == ESP_OK) {
         ESP_LOGI(TAG,
@@ -458,6 +454,13 @@ static void telemetry_task(void *arg)
     (void)arg;
 
     while (1) {
+        xEventGroupWaitBits(
+            connected_event_group,
+            CONNECTED_BIT,
+            pdFALSE,       // Не очищать бит после ожидания.
+            pdTRUE,        // Ждать все указанные биты.
+            portMAX_DELAY  // Ждать бесконечно.
+        );
 
         float temperature;
 
@@ -489,24 +492,120 @@ static void telemetry_task(void *arg)
     }
 }
 
+static void publish_connection(int connect)
+{
+    cJSON *root = cJSON_CreateObject();
+
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Failed to create JSON");
+        return;
+    }
+
+    cJSON_AddStringToObject(
+        root,
+        "device_id",
+        DEVICE_ID
+    );
+
+    cJSON_AddStringToObject(
+        root,
+        "device_id",
+        connect ? "connect" : "disconnect"
+    );
+
+    char *payload = cJSON_PrintUnformatted(root);
+
+    if (payload == NULL) {
+        ESP_LOGE(TAG, "Failed to serialize JSON");
+
+        cJSON_Delete(root);
+        return;
+    }
+
+    int msg_id = mqtt_manager_publish(
+        MQTT_TOPIC_DATA,
+        payload,
+        1,
+        0
+    );
+
+    if (msg_id >= 0) {
+
+        ESP_LOGI(
+            TAG,
+            "Published to %s: %s",
+            MQTT_TOPIC_DATA,
+            payload
+        );
+
+    } else {
+
+        ESP_LOGE(
+            TAG,
+            "MQTT publish failed"
+        );
+    }
+
+    cJSON_free(payload);
+    cJSON_Delete(root);
+}
+
 static void button_task(void *arg)
 {
     (void)arg;
 
     while (1) {
-
         if (button_is_pressed()) {
-            ESP_LOGI("BUTTON", "Button pressed");
-        }
+            int cnt = 1500;
+            int delay = 50;
 
-        vTaskDelay(
-            pdMS_TO_TICKS(50)
-        );
+            while (cnt != 0) {
+                if (!button_is_pressed()) {
+                    break;
+                }
+                vTaskDelay(
+                    pdMS_TO_TICKS(delay)
+                );
+                cnt -= delay;
+            }
+
+            while (button_is_pressed()) {}
+
+            if (cnt == 0) {
+                ESP_LOGI("BUTTON", "Button held");
+
+                EventBits_t bits = xEventGroupGetBits(connected_event_group);
+
+                if (bits & CONNECTED_BIT) {
+                    xEventGroupClearBits(
+                        connected_event_group,
+                        CONNECTED_BIT
+                    );
+
+                    publish_connection(0);
+                } else {
+                    xEventGroupSetBits(
+                        connected_event_group,
+                        CONNECTED_BIT
+                    );
+
+                    publish_connection(1);
+                }
+            }
+        }
     }
 }
 
 void app_main(void)
 {
+    connected_event_group = xEventGroupCreate();
+
+    if (connected_event_group == NULL) {
+        ESP_LOGE(
+            TAG,
+            "Failed to create event group"
+        );
+    }
     esp_err_t ret = nvs_flash_init();
 
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -536,6 +635,12 @@ void app_main(void)
     ESP_ERROR_CHECK(mqtt_manager_init());
 
     mqtt_manager_wait_connected();
+
+    xEventGroupSetBits(
+        connected_event_group,
+        CONNECTED_BIT
+    );
+    publish_connection(1);
 
     if (xTaskCreate(
             telemetry_task,
