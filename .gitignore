@@ -17,4 +17,7 @@ scripts/test_voice_stream.py
 Devices/*/managed_components/
 
 # secrets
-Devices/*/main/secrets.h
+*/*/*/*/secrets.h
+*/*/*/secrets.h
+*/*/secrets.h
+*/secrets.h
