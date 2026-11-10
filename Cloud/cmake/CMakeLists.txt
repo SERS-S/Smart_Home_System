@@ -24,7 +24,49 @@ foreach(process IN LISTS PROCESSES)
     install(TARGETS ${target} RUNTIME DESTINATION bin)
 endforeach()
 
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+target_link_libraries(shs_cloud_telemetry PRIVATE
+    unofficial::sqlite3::sqlite3
+    nlohmann_json::nlohmann_json
+)
+
+# build.sh exports Cloud/.env before configuring CMake, as for Mosquitto.
+foreach(variable IN ITEMS
+    SQLITE_TELEMETRY_DB_PATH SQLITE_API_DB_PATH
+    SQLITE_JOURNAL_DB_PATH SQLITE_VOICE_DB_PATH
+)
+    set(${variable} "$ENV{${variable}}")
+    if("${${variable}}" STREQUAL "" OR NOT IS_ABSOLUTE "${${variable}}")
+        message(FATAL_ERROR "${variable} must be an absolute database file path")
+    endif()
+    if("${${variable}}" MATCHES "[\r\n]")
+        message(FATAL_ERROR "${variable} must not contain line breaks")
+    endif()
+    # Escape paths for C++ string literals in the generated header.
+    string(REPLACE "\\" "\\\\" ${variable} "${${variable}}")
+    string(REPLACE "\"" "\\\"" ${variable} "${${variable}}")
+endforeach()
+
+configure_file(
+    "../Processes/Telemetry/sqlite_paths.h.in"
+    "generated/telemetry/sqlite_paths.h"
+    @ONLY
+)
+target_include_directories(shs_cloud_telemetry PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/telemetry"
+)
+
 add_subdirectory("../Processes/Mosquitto" "${CMAKE_CURRENT_BINARY_DIR}/mosquitto")
+
+target_link_libraries(shs_cloud_telemetry PRIVATE
+    shs_mosquitto_endpoint libmosquitto_static Threads::Threads
+)
+target_include_directories(shs_cloud_telemetry PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Processes/Mosquitto/upstream/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Processes/Mosquitto"
+)
 
 target_link_libraries(shs_cloud_api PRIVATE
     shs_mosquitto_endpoint libmosquitto_static cJSON

@@ -4,6 +4,9 @@ Wants=shs_mosquitto.service
 After=network.target shs_mosquitto.service
 
 [Service]
+StandardOutput=journal
+StandardError=journal
+LogNamespace=voice
 Type=simple
 ExecStart=/usr/local/bin/shs_cloud_voice /usr/local/share/smart-home/models/vosk-model-small-ru-0.22
 Restart=on-failure

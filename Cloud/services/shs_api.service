@@ -5,6 +5,9 @@ Requires=shs_mosquitto.service
 After=network-online.target shs_mosquitto.service
 
 [Service]
+StandardOutput=journal
+StandardError=journal
+LogNamespace=api
 Type=oneshot
 ExecStart=/usr/local/bin/shs_cloud_api
 RemainAfterExit=yes

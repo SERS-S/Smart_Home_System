@@ -6,6 +6,9 @@
     "boost-asio",
     "boost-beast",
     "boost-system",
-    "vosk"
+    "vosk",
+    "sqlite3",
+    "nlohmann-json",
+    "spdlog"
   ]
 }
