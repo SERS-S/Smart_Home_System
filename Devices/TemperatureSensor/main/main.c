@@ -186,7 +186,7 @@ static void publish_connection(int connect)
 
     cJSON_AddStringToObject(
         root,
-        "device_id",
+        "signal",
         connect ? "connect" : "disconnect"
     );
 
