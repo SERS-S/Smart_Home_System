@@ -4,6 +4,9 @@ Wants=shs_mosquitto.service
 After=network.target shs_mosquitto.service
 
 [Service]
+StandardOutput=journal
+StandardError=journal
+LogNamespace=telemetry
 Type=simple
 ExecStart=/usr/local/bin/shs_cloud_telemetry
 Restart=on-failure

@@ -403,13 +403,25 @@ EOF
             scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
             "$cloud_dir"/services/*.service "$REMOTE_USER@$REMOTE_HOST:/etc/systemd/system/"
 
+        run_step 'Загрузка настроек журналов' \
+            scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
+            "$cloud_dir"/services/journal_namespace/*.conf "$REMOTE_USER@$REMOTE_HOST:/etc/systemd/"
+
          printf "\n"
 
         printf " > > Enabling Cloud services\n"
         sshpass -p "$PASSWORD" ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" 'bash -s' <<'EOF'
             set -euo pipefail
-        
+
             systemctl daemon-reload
+
+            sudo systemctl restart \
+                systemd-journald@telemetry.service \
+                systemd-journald@mosquitto.service \
+                systemd-journald@voice.service \
+                systemd-journald@api.service \
+                systemd-journald@control.service \
+                systemd-journald@ai-assistant.service
 
             systemctl enable shs_mosquitto.service; printf "  > > > Enabled shs_mosquitto.service\n"
             systemctl enable shs_control.service; printf "  > > > Enabled shs_control.service\n"

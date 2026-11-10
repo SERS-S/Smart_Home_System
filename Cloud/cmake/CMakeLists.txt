@@ -25,9 +25,11 @@ foreach(process IN LISTS PROCESSES)
 endforeach()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 target_link_libraries(shs_cloud_telemetry PRIVATE
     unofficial::sqlite3::sqlite3
+    nlohmann_json::nlohmann_json
 )
 
 # build.sh exports Cloud/.env before configuring CMake, as for Mosquitto.

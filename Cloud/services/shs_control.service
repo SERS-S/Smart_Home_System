@@ -2,6 +2,9 @@
 Description=Smart Home System - Control placeholder
 
 [Service]
+StandardOutput=journal
+StandardError=journal
+LogNamespace=control
 Type=oneshot
 ExecStart=/usr/local/bin/shs_cloud_control
 RemainAfterExit=yes

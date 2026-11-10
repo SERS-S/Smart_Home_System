@@ -1,28 +1,24 @@
-#include <sqlite3.h>
+#include "db_func.hpp"
+
 #include <mosquitto/libmosquitto.h>
 #include <mosquitto/libcommon.h>
-#include "sqlite_paths.h"
+#include <nlohmann/json.hpp>
 
 #include <array>
 #include <chrono>
 #include <csignal>
 #include <exception>
-#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <vector>
+
+namespace db = telemetry::db;
 
 namespace
 {
-    namespace fs = std::filesystem;
-    using Database = std::unique_ptr<sqlite3, decltype(&sqlite3_close)>;
-    using Statement = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
-
     volatile std::sig_atomic_t stop_requested = 0;
 
     void request_stop(int) noexcept
@@ -54,6 +50,10 @@ namespace
     {
         std::mutex mutex;
         std::exception_ptr error;
+        sqlite3* telemetry_database = nullptr;
+        sqlite3* api_database = nullptr;
+        sqlite3* voice_database = nullptr;
+        sqlite3* journal_database = nullptr;
     };
 
     void mqtt_callback_failed(mosquitto* client, void* userdata) noexcept
@@ -82,13 +82,24 @@ namespace
 
             if (topic == "api/home/weather") 
             {
-                // TODO: разобрать погоду и сохранить в базе api.
-                std::cout << "API weather placeholder: " << payload << std::endl;
+                auto& context = *static_cast<MqttContext*>(userdata);
+                db::save_api_message(context.api_database, payload);
+                
+                std::cout << "Saved API weather message" << std::endl;
             } 
-            else if (topic == "voice/home/data") 
+            else if (topic == "voice/home/data")
             {
-                // TODO: разобрать распознанный текст и сохранить в базе voice.
-                std::cout << "Voice data placeholder: " << payload << std::endl;
+                const auto data = nlohmann::json::parse(payload, nullptr, false);
+                if (!data.is_object() || !data.contains("text") || !data["text"].is_string()) 
+                {
+                    std::cerr << "Ignoring voice/home/data: payload must be a JSON object with a string field text" << std::endl;
+                    return;
+                }
+
+                auto& context = *static_cast<MqttContext*>(userdata);
+                db::save_voice_message(context.voice_database, data["text"].get_ref<const std::string&>());
+
+                std::cout << "Saved voice message" << std::endl;
             } 
             else if 
             (
@@ -96,18 +107,18 @@ namespace
                 topic == "telemetry/home/temperature/data"
             ) 
             {
-                // TODO: разобрать показание датчика и сохранить в базе telemetry.
-                std::cout 
-                    << "Telemetry data placeholder [" 
-                    << topic 
-                    << "]: "
-                    << payload 
-                << std::endl;
+                auto& context = *static_cast<MqttContext*>(userdata);
+                if (db::save_telemetry_message(context.telemetry_database, topic, payload)) 
+                {
+                    std::cout << "Saved telemetry message [" << topic << "]" << std::endl;
+                }
             }
             else if (topic == "journal/home/info")
             {
-                // TODO: разобрать журнал и сохранить в базе journal.
-                std::cout << "Journal info placeholder: " << payload << std::endl;
+                auto& context = *static_cast<MqttContext*>(userdata);
+                db::save_journal_message(context.journal_database, payload);
+
+                std::cout << "Saved journal message" << std::endl;
             }
         }
         catch (...) 
@@ -126,15 +137,31 @@ namespace
         };
 
     public:
-        MqttSubscriber()
+        MqttSubscriber
+        (
+            sqlite3* telemetry_database, 
+            sqlite3* api_database,
+            sqlite3* voice_database, 
+            sqlite3* journal_database
+        )
         {
+            if (!telemetry_database) throw std::runtime_error("Telemetry database connection is missing");
+            if (!api_database) throw std::runtime_error("API database connection is missing");
+            if (!voice_database) throw std::runtime_error("Voice database connection is missing");
+            if (!journal_database) throw std::runtime_error("Journal database connection is missing");
+            context.telemetry_database = telemetry_database;
+            context.api_database = api_database;
+            context.voice_database = voice_database;
+            context.journal_database = journal_database;
             client.reset(mosquitto_new(nullptr, true, &context));
             if (!client) throw std::runtime_error("Could not create Telemetry MQTT client");
 
             mosquitto_message_callback_set(client.get(), &on_mqtt_message);
             mosquitto_connect_callback_set(client.get(),
-                [](mosquitto* client, void* userdata, int result) noexcept {
-                    try {
+                [](mosquitto* client, void* userdata, int result) noexcept 
+                {
+                    try 
+                    {
                         if (result != 0) {
                             throw std::runtime_error("MQTT connection refused: " + std::to_string(result));
                         }
@@ -145,20 +172,24 @@ namespace
 
                         std::cout << "Telemetry MQTT connected; subscriptions requested" << std::endl;
                     }
-                    catch (...) {
+                    catch (...) 
+                    {
                         mqtt_callback_failed(client, userdata);
                     }
                 });
             mosquitto_subscribe_callback_set(client.get(),
-                [](mosquitto* client, void* userdata, int, int count, const int* granted) noexcept {
-                    try {
+                [](mosquitto* client, void* userdata, int, int count, const int* granted) noexcept 
+                {
+                    try 
+                    {
                         for (int i = 0; i < count; ++i) {
                             if (granted[i] >= 128) {
                                 throw std::runtime_error("MQTT broker rejected a Telemetry subscription");
                             }
                         }
                     }
-                    catch (...) {
+                    catch (...) 
+                    {
                         mqtt_callback_failed(client, userdata);
                     }
                 });
@@ -189,213 +220,31 @@ namespace
             if (error) std::rethrow_exception(error);
         }
     };
-
-    struct Column
-    {
-        const char* name;
-        const char* type;
-        int primary_key = 0;
-    };
-
-    struct DatabaseSpec
-    {
-        const char* path;
-        const char* table;
-        std::vector<Column> columns;
-    };
-
-    void check(sqlite3* db, int result)
-    {
-        if (result != SQLITE_OK) {
-            throw std::runtime_error(db ? sqlite3_errmsg(db) : sqlite3_errstr(result));
-        }
-    }
-
-    void execute(sqlite3* db, const std::string& sql)
-    {
-        check(db, sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr));
-    }
-
-    Statement prepare(sqlite3* db, const char* sql)
-    {
-        sqlite3_stmt* raw = nullptr;
-        const int result = sqlite3_prepare_v2(db, sql, -1, &raw, nullptr);
-        Statement statement(raw, &sqlite3_finalize);
-        check(db, result);
-        return statement;
-    }
-
-    std::string text(sqlite3_stmt* statement, int column)
-    {
-        const auto* value = sqlite3_column_text(statement, column);
-        return value ? reinterpret_cast<const char*>(value) : "";
-    }
-
-    void create_table(sqlite3* db, const DatabaseSpec& spec)
-    {
-        // All SQL identifiers come from the fixed specifications below.
-        std::string sql = "CREATE TABLE \"" + std::string(spec.table) + "\" (";
-        for (std::size_t i = 0; i < spec.columns.size(); ++i) {
-            const auto& column = spec.columns[i];
-            if (i != 0) sql += ", ";
-            sql += "\"" + std::string(column.name) + "\" " + column.type;
-            if (column.primary_key) sql += " PRIMARY KEY NOT NULL";
-            if (std::string(column.name) == "type") {
-                sql += " CHECK (type IN ('illuminance', 'temperature'))";
-            }
-        }
-        execute(db, sql + ");");
-    }
-
-    void validate_schema(sqlite3* db, const DatabaseSpec& spec)
-    {
-        auto table = prepare(db, "SELECT type FROM sqlite_schema WHERE name = ?1 COLLATE NOCASE;");
-        check(db, sqlite3_bind_text(table.get(), 1, spec.table, -1, SQLITE_STATIC));
-        int result = sqlite3_step(table.get());
-        if (result != SQLITE_ROW && result != SQLITE_DONE) check(db, result);
-        if (result != SQLITE_ROW || text(table.get(), 0) != "table") {
-            throw std::runtime_error("Required table is missing: " + std::string(spec.table));
-        }
-
-        auto columns = prepare(db,
-            "SELECT name, type, pk, hidden FROM pragma_table_xinfo(?1) ORDER BY cid;");
-        check(db, sqlite3_bind_text(columns.get(), 1, spec.table, -1, SQLITE_STATIC));
-        std::size_t index = 0;
-        while ((result = sqlite3_step(columns.get())) == SQLITE_ROW) {
-            if (index >= spec.columns.size()) {
-                throw std::runtime_error("Unexpected column: " + text(columns.get(), 0));
-            }
-            const auto& expected = spec.columns[index];
-            if (sqlite3_stricmp(text(columns.get(), 0).c_str(), expected.name) != 0 ||
-                sqlite3_stricmp(text(columns.get(), 1).c_str(), expected.type) != 0 ||
-                sqlite3_column_int(columns.get(), 2) != expected.primary_key ||
-                sqlite3_column_int(columns.get(), 3) != 0) {
-                throw std::runtime_error(
-                    "Schema mismatch at column " + std::to_string(index + 1) +
-                    ": expected " + expected.name + " " + expected.type +
-                    (expected.primary_key ? " PRIMARY KEY" : "") +
-                    ", got " + text(columns.get(), 0) + " " + text(columns.get(), 1));
-            }
-            ++index;
-        }
-        if (result != SQLITE_DONE) check(db, result);
-        if (index != spec.columns.size()) 
-        {
-            throw std::runtime_error("Missing columns in table " + std::string(spec.table));
-        }
-
-        if (std::string(spec.table) == "telemetry") 
-        {
-            // Also check enum values in existing databases created without CHECK.
-            auto invalid_type = prepare(db,
-                "SELECT 1 FROM telemetry WHERE type IS NOT NULL "
-                "AND type NOT IN ('illuminance', 'temperature') LIMIT 1;");
-            result = sqlite3_step(invalid_type.get());
-            if (result == SQLITE_ROW) {
-                throw std::runtime_error("telemetry.type must be illuminance or temperature");
-            }
-            if (result != SQLITE_DONE) check(db, result);
-        }
-    }
-
-    Database initialize_database(const DatabaseSpec& spec)
-    {
-        try {
-            const fs::path path(spec.path);
-            const bool existed = fs::exists(path);
-            if (!existed) fs::create_directories(path.parent_path());
-
-            sqlite3* raw = nullptr;
-            const int result = sqlite3_open_v2
-            (
-                spec.path, &raw,
-                SQLITE_OPEN_READWRITE | (existed ? 0 : SQLITE_OPEN_CREATE), 
-                nullptr
-            );
-            Database db(raw, &sqlite3_close);
-            check(db.get(), result);
-            check(db.get(), sqlite3_busy_timeout(db.get(), 5000));
-
-            execute(db.get(), "BEGIN;");
-            if (!existed) create_table(db.get(), spec);
-            validate_schema(db.get(), spec);
-            execute(db.get(), "COMMIT;");
-
-            std::cout << (existed ? "Validated" : "Created") << " SQLite "
-                      << spec.table << ": " << spec.path << '\n';
-            return db;
-        }
-        catch (const std::exception& error) {
-            throw std::runtime_error(std::string(spec.path) + ": " + error.what());
-        }
-    }
 }
 
 int main()
 {
     try 
     {
-        const std::vector<Column> text_columns = 
-        {
-            {"id", "TEXT", 1}, {"text", "TEXT"}, {"timestamp", "INTEGER"}
-        };
-        const std::array<DatabaseSpec, 4> specs = {
-        {
-            {
-                SQLITE_TELEMETRY_DB_PATH, 
-                "telemetry", 
-                {
-                {"id", "TEXT", 1}, {"device_id", "TEXT"}, {"value", "REAL"},
-                {"type", "TEXT"}, {"unit", "TEXT"}, {"serial", "INTEGER"},
-                {"timestamp", "INTEGER"}
-                }
-            },
-            {
-                SQLITE_API_DB_PATH, 
-                "api", 
-                text_columns
-            },
-            {
-                SQLITE_JOURNAL_DB_PATH, 
-                "journal", 
-                text_columns
-            },
-            {
-                SQLITE_VOICE_DB_PATH, 
-                "voice", 
-                text_columns
-            }
-        }};
-
-        std::set<fs::path> paths;
-        for (const auto& spec : specs) 
-        {
-            if (!fs::path(spec.path).is_absolute()) 
-            {
-                throw std::runtime_error("Database path must be absolute: " + std::string(spec.path));
-            }
-            if (!paths.insert(fs::weakly_canonical(spec.path)).second) 
-            {
-                throw std::runtime_error("Database paths must be different: " + std::string(spec.path));
-            }
-        }
-
-        std::vector<Database> databases;
-        for (const auto& spec : specs) 
-        {
-            databases.push_back(initialize_database(spec));
-        }
+        auto databases = db::initialize_databases();
 
         std::signal(SIGINT, &request_stop);
         std::signal(SIGTERM, &request_stop);
 
-        MqttSubscriber mqtt;
+        MqttSubscriber mqtt
+        (
+            databases.at(0).get(), 
+            databases.at(1).get(),
+            databases.at(3).get(), 
+            databases.at(2).get()
+        );
         std::cout << "Telemetry MQTT started in background" << std::endl;
 
         while (!stop_requested) 
         {
             mqtt.rethrow_if_failed();
-            // TODO: работа с pipe (или mkfifo или UNIX socket) в основном потоке. Пока ожидаем завершения.
+            // TODO: работа с pipe (или mkfifo или UNIX socket) в основном потоке
+
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         mqtt.rethrow_if_failed();

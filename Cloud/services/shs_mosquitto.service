@@ -2,6 +2,9 @@
 Description=Smart Home System - Mosquitto broker
 
 [Service]
+StandardOutput=journal
+StandardError=journal
+LogNamespace=mosquitto
 Type=simple
 ConfigurationDirectory=mosquitto
 ExecStart=/usr/local/bin/shs_cloud_mosquitto -c /etc/mosquitto/mosquitto.conf
