@@ -6,6 +6,7 @@ idf_component_register(
         "control/control.c"
         "time_sync/time_sync.c"
         "publish_connection/publish_connection.c"
+        "info/info.c"
 
     INCLUDE_DIRS
         "wifi_manager/include"
@@ -14,8 +15,10 @@ idf_component_register(
         "control/include"
         "time_sync/include"
         "publish_connection/include"
+        "info/include"
 
     REQUIRES
+        esp_adc
         esp_wifi
         esp_event
         esp_netif

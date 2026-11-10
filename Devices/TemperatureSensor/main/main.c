@@ -19,6 +19,7 @@ static const char *TAG = "temperature sensor";
 #include "control.h"
 #include "time_sync.h"
 #include "publish_connection.h"
+#include "info.h"
 
 #include "bmp280.h"
 
@@ -163,6 +164,26 @@ static void telemetry_task(void *arg)
     }
 }
 
+
+static void info_task(void *args)
+{
+    (void)args;
+
+    while (1) {
+        wait_bits();
+
+        publish_info(
+            DEVICE_ID,
+            VERSION,
+            MQTT_TOPIC_INFO
+        );
+
+        vTaskDelay(
+            pdMS_TO_TICKS(PUBLISH_PERIOD_MS)
+        );
+    }
+}
+
 static void publish_connect(void)
 {
     publish_connection(
@@ -217,6 +238,8 @@ void app_main(void)
 
     button_init();
 
+    voltage_init();
+
     // Common network modules.
     ESP_ERROR_CHECK(wifi_manager_init());
 
@@ -257,6 +280,21 @@ void app_main(void)
         ESP_LOGE(
             TAG,
             "Failed to create button task"
+        );
+    }
+
+    if (xTaskCreate(
+            info_task,
+            "button",
+            4096,
+            NULL,
+            5,
+            NULL
+        ) != pdPASS) {
+
+        ESP_LOGE(
+            TAG,
+            "Failed to create info task"
         );
     }
 }
