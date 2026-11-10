@@ -12,16 +12,23 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
+#include "driver/gpio.h"
+
 #include "cJSON.h"
 
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
-
+#include "button.h"
+#include "control.h"
+#include "time_sync.h"
+#include "publish_connection.h"
+#include "info.h"
 
 // ---------- Configuration ----------
 
 #define MQTT_TOPIC_DATA      "telemetry/home/light/data"
 #define MQTT_TOPIC_INFO      "telemetry/home/light/info"
+#define MQTT_TOPIC_SIGNAL      "telemetry/home/light/signal"
 
 #define DEVICE_ID            "light_sensor_01"
 #define VERSION              "0.1"
@@ -29,9 +36,13 @@
 #define SENSOR_ADC_UNIT      ADC_UNIT_1
 #define SENSOR_ADC_CHANNEL   ADC_CHANNEL_6   // GPIO34
 
-#define VOLTAGE_ADC_CHANNEL  ADC_CHANNEL_4   // GPIO32
+#define PUBLISH_PERIOD_MS 120000
+#define N_PROBS 30
+#define SENSOR_PERIOD_MS (PUBLISH_PERIOD_MS) / (N_PROBS)
 
-#define PUBLISH_PERIOD_MS    60000
+#define ESP_DISCONNECT 0x2001
+
+#define LED_BUILTIN 2 
 
 #define LUX_PER_ADC_COUNT    1.0f
 
@@ -43,11 +54,7 @@
 
 static const char *TAG = "light_sensor";
 
-static EventGroupHandle_t event_group;
-
-#define TIME_SYNCED_BIT BIT0
-
-static adc_oneshot_unit_handle_t adc_handle;
+extern adc_oneshot_unit_handle_t adc_handle;
 
 static int serial_number = 0;
 
@@ -60,10 +67,6 @@ static void sensor_init(void)
         .unit_id = SENSOR_ADC_UNIT,
     };
 
-    ESP_ERROR_CHECK(
-        adc_oneshot_new_unit(&unit_config, &adc_handle)
-    );
-
     const adc_oneshot_chan_cfg_t channel_config = {
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
@@ -73,14 +76,6 @@ static void sensor_init(void)
         adc_oneshot_config_channel(
             adc_handle,
             SENSOR_ADC_CHANNEL,
-            &channel_config
-        )
-    );
-
-    ESP_ERROR_CHECK(
-        adc_oneshot_config_channel(
-            adc_handle,
-            VOLTAGE_ADC_CHANNEL,
             &channel_config
         )
     );
@@ -115,141 +110,29 @@ static int sensor_read_raw(void)
 
 static float raw_to_lux(int raw)
 {
-    // Временная формула.
-    // Для реальных lux потребуется калибровка.
     return (float)raw * LUX_PER_ADC_COUNT;
 }
 
-
-// ---------- Time ----------
-
-static void time_sync_notification_cb(struct timeval *tv)
+static float read_lux()
 {
-    (void)tv;
+    int raw = sensor_read_raw();
 
-    ESP_LOGI(TAG, "Time synchronized");
-
-    xEventGroupSetBits(
-        event_group,
-        TIME_SYNCED_BIT
-    );
+    return raw_to_lux(raw);
 }
-
-
-static void start_time_sync(void)
-{
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-
-    esp_sntp_setservername(
-        0,
-        "pool.ntp.org"
-    );
-
-    esp_sntp_set_time_sync_notification_cb(
-        time_sync_notification_cb
-    );
-
-    esp_sntp_init();
-}
-
-
-static void wait_for_time_sync(void)
-{
-    xEventGroupWaitBits(
-        event_group,
-        TIME_SYNCED_BIT,
-        pdFALSE,
-        pdTRUE,
-        portMAX_DELAY
-    );
-}
-
-
 // ---------- Info ----------
-
-static float raw_to_volt(int raw)
-{
-    return VOLT_PER_ADC_COUNT * (float)raw;
-}
-
-
-static void publish_info(void)
-{
-    int raw = 0;
-
-    esp_err_t err = adc_oneshot_read(
-        adc_handle,
-        VOLTAGE_ADC_CHANNEL,
-        &raw
-    );
-
-    if (err != ESP_OK) {
-        ESP_LOGE(
-            TAG,
-            "Voltage ADC read failed: %s",
-            esp_err_to_name(err)
-        );
-
-        return;
-    }
-
-    float voltage = raw_to_volt(raw);
-
-    cJSON *root = cJSON_CreateObject();
-
-    if (root == NULL) {
-        ESP_LOGE(TAG, "Failed to create JSON");
-        return;
-    }
-
-    cJSON_AddStringToObject(
-        root,
-        "device_id",
-        DEVICE_ID
-    );
-
-    cJSON_AddNumberToObject(
-        root,
-        "voltage",
-        voltage
-    );
-
-    cJSON_AddStringToObject(
-        root,
-        "version",
-        VERSION
-    );
-
-    char *payload = cJSON_PrintUnformatted(root);
-
-    if (payload == NULL) {
-        cJSON_Delete(root);
-        return;
-    }
-
-    int msg_id = mqtt_manager_publish(
-        MQTT_TOPIC_INFO,
-        payload,
-        1,
-        0
-    );
-
-    if (msg_id < 0) {
-        ESP_LOGE(TAG, "Failed to publish info");
-    }
-
-    cJSON_free(payload);
-    cJSON_Delete(root);
-}
-
 
 static void info_task(void *args)
 {
     (void)args;
 
     while (1) {
+        wait_bits();
 
-        publish_info();
+        publish_info(
+            DEVICE_ID,
+            VERSION,
+            MQTT_TOPIC_INFO
+        );
 
         vTaskDelay(
             pdMS_TO_TICKS(PUBLISH_PERIOD_MS)
@@ -260,16 +143,8 @@ static void info_task(void *args)
 
 // ---------- Telemetry ----------
 
-static void publish_telemetry(void)
+static void publish_telemetry(int lux)
 {
-    int raw = sensor_read_raw();
-
-    if (raw < 0) {
-        return;
-    }
-
-    float lux = raw_to_lux(raw);
-
     time_t now;
     struct tm timeinfo;
 
@@ -345,17 +220,113 @@ static void publish_telemetry(void)
     cJSON_Delete(root);
 }
 
+static float mean(float *array, int n)
+{
+    int i;
+    float sum = 0;
+    for (i = 0; i < n; i++) {
+        sum += array[i];
+    }
+
+    return sum / n;
+}
+
+static esp_err_t n_times_read(float *result)
+{
+    float array[N_PROBS];
+    float lux;
+    int i;
+
+    for (i = 0; i < N_PROBS; i++) {
+        lux = read_lux();
+
+        array[i] = lux;
+
+        ESP_LOGI(
+            TAG,
+            "Lux: %.2f lux",
+            lux
+        );
+
+        vTaskDelay(
+            pdMS_TO_TICKS(SENSOR_PERIOD_MS)
+        );
+
+        if (!bits_is_set()) {
+            return ESP_DISCONNECT;
+        }
+    }
+
+    *result = mean(array, N_PROBS);
+
+    return ESP_OK;
+}
 
 static void telemetry_task(void *arg)
 {
     (void)arg;
 
     while (1) {
+        wait_bits();
 
-        publish_telemetry();
+        float lux;
+        esp_err_t err = n_times_read(&lux);
 
-        vTaskDelay(
-            pdMS_TO_TICKS(PUBLISH_PERIOD_MS)
+        if (err == ESP_DISCONNECT) {
+            continue;
+        }
+
+        if (err == ESP_OK) {
+
+            ESP_LOGI(
+                TAG,
+                "Mean lux: %.2f lux",
+                lux
+            );
+
+            publish_telemetry(lux);
+
+        } else {
+
+            ESP_LOGE(
+                TAG,
+                "Lux read failed: %s",
+                esp_err_to_name(err)
+            );
+        }
+    }
+}
+
+
+static void publish_connect(void)
+{
+    publish_connection(
+        1,
+        DEVICE_ID,
+        MQTT_TOPIC_SIGNAL
+    );
+    gpio_set_level(LED_BUILTIN, 1);
+}
+
+static void publish_disconnect(void)
+{
+    publish_connection(
+        0,
+        DEVICE_ID,
+        MQTT_TOPIC_SIGNAL
+    );
+    gpio_set_level(LED_BUILTIN, 0);
+}
+
+static void button_task(void *arg)
+{
+    (void)arg;
+
+    while (1) {
+        do_control(
+            button_is_pressed,
+            publish_disconnect,
+            publish_connect
         );
     }
 }
@@ -369,32 +340,32 @@ void app_main(void)
 
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
         ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
 
     ESP_ERROR_CHECK(ret);
 
-    event_group = xEventGroupCreate();
-
-    if (event_group == NULL) {
-        ESP_LOGE(TAG, "Failed to create event group");
-        return;
-    }
-
+    button_init();
+    voltage_init();
     sensor_init();
+
+
+    gpio_reset_pin(LED_BUILTIN);
+    gpio_set_direction(LED_BUILTIN, GPIO_MODE_OUTPUT);
 
     // Network initialization.
     ESP_ERROR_CHECK(wifi_manager_init());
+
     wifi_manager_wait_connected();
 
     ESP_ERROR_CHECK(mqtt_manager_init());
+
     mqtt_manager_wait_connected();
 
-    // Time synchronization requires network access.
-    start_time_sync();
-    wait_for_time_sync();
+    time_sync();
+
+    init_event_group(publish_connect);
 
     if (xTaskCreate(
             telemetry_task,
@@ -405,7 +376,25 @@ void app_main(void)
             NULL
         ) != pdPASS) {
 
-        ESP_LOGE(TAG, "Failed to create telemetry task");
+        ESP_LOGE(
+            TAG,
+            "Failed to create telemetry task"
+        );
+    }
+
+    if (xTaskCreate(
+            button_task,
+            "button",
+            4096,
+            NULL,
+            5,
+            NULL
+        ) != pdPASS) {
+
+        ESP_LOGE(
+            TAG,
+            "Failed to create button task"
+        );
     }
 
     if (xTaskCreate(
@@ -417,6 +406,9 @@ void app_main(void)
             NULL
         ) != pdPASS) {
 
-        ESP_LOGE(TAG, "Failed to create info task");
+        ESP_LOGE(
+            TAG,
+            "Failed to create info task"
+        );
     }
 }

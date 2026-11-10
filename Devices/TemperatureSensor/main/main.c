@@ -348,7 +348,7 @@ void app_main(void)
 
     if (xTaskCreate(
             info_task,
-            "button",
+            "info",
             4096,
             NULL,
             5,

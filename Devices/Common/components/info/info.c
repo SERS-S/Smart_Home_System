@@ -15,7 +15,7 @@
 
 static const char *TAG = "publish_info";
 
-static adc_oneshot_unit_handle_t adc_handle;
+adc_oneshot_unit_handle_t adc_handle;
 
 
 static float raw_to_volt(int raw)
