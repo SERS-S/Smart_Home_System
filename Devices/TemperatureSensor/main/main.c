@@ -17,6 +17,7 @@ static const char *TAG = "temperature sensor";
 #include "mqtt_manager.h"
 #include "button.h"
 #include "control.h"
+#include "time_sync.h"
 
 #include "bmp280.h"
 
@@ -272,6 +273,8 @@ void app_main(void)
     ESP_ERROR_CHECK(mqtt_manager_init());
 
     mqtt_manager_wait_connected();
+
+    time_sync();
 
     init_event_group(publish_connect);
 

@@ -4,12 +4,14 @@ idf_component_register(
         "mqtt_manager/mqtt_manager.c"
         "button/button.c"
         "control/control.c"
+        "time_sync/time_sync.c"
 
     INCLUDE_DIRS
         "wifi_manager/include"
         "mqtt_manager/include"
         "button/include"
         "control/include"
+        "time_sync/include"
 
     REQUIRES
         esp_wifi
