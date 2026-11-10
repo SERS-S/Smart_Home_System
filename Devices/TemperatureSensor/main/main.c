@@ -15,7 +15,6 @@
 #define I2C_SDA_PIN GPIO_NUM_21
 #define I2C_SCL_PIN GPIO_NUM_22
 #define I2C_PORT    I2C_NUM_0
-#define BUTTON_GPIO GPIO_NUM_33
 
 #define BMP280_ADDR_1 0x76
 #define BMP280_ADDR_2 0x77
@@ -36,6 +35,7 @@ static i2c_master_dev_handle_t bmp280_handle;
 
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
+#include "button.h"
 
 #define DEVICE_ID "temperature_sensor_01"
 #define VERSION   "0.1"
@@ -337,24 +337,6 @@ static esp_err_t bmp280_read_temperature(float *temperature)
     *temperature = temp_x100 / 100.0f;
 
     return ESP_OK;
-}
-
-static void button_init(void)
-{
-    gpio_config_t config = {
-        .pin_bit_mask = 1ULL << BUTTON_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-
-    ESP_ERROR_CHECK(gpio_config(&config));
-}
-
-static bool button_is_pressed(void)
-{
-    return gpio_get_level(BUTTON_GPIO) == 0;
 }
 
 static void publish_telemetry(float temperature)
