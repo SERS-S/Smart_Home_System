@@ -30,7 +30,13 @@ static const char *TAG = "temperature sensor";
 #define MQTT_TOPIC_INFO "telemetry/home/temperature/info"
 #define MQTT_TOPIC_SIGNAL "telemetry/home/temperature/signal"
 
-#define PUBLISH_PERIOD_MS 5000
+#define PUBLISH_PERIOD_MS 120000
+#define N_PROBS 30
+#define SENSOR_PERIOD_MS (PUBLISH_PERIOD_MS) / (N_PROBS)
+
+#define ESP_DISCONNECT 0x2001
+
+#define LED_BUILTIN 2 
 
 static int serial_number = 0;
 
@@ -126,6 +132,59 @@ static void publish_telemetry(float temperature)
     cJSON_Delete(root);
 }
 
+static float mean(float *array, int n)
+{
+    int i;
+    float sum = 0;
+    for (i = 0; i < n; i++) {
+        sum += array[i];
+    }
+
+    return sum / n;
+}
+
+static esp_err_t n_times_read(float *result)
+{
+    float array[N_PROBS];
+    float temperature;
+    int i;
+
+    for (i = 0; i < N_PROBS; i++) {
+        esp_err_t err =
+            bmp280_read_temperature(&temperature);
+        if (err == ESP_OK) {
+
+            array[i] = temperature;
+
+            ESP_LOGI(
+                TAG,
+                "Temperature: %.2f C",
+                temperature
+            );
+
+        } else {
+
+            ESP_LOGE(
+                TAG,
+                "Temperature read failed: %s",
+                esp_err_to_name(err)
+            );
+
+            return err;
+        }
+        vTaskDelay(
+            pdMS_TO_TICKS(SENSOR_PERIOD_MS)
+        );
+
+        if (!bits_is_set()) {
+            return ESP_DISCONNECT;
+        }
+    }
+
+    *result = mean(array, N_PROBS);
+
+    return ESP_OK;
+}
 
 static void telemetry_task(void *arg)
 {
@@ -136,14 +195,17 @@ static void telemetry_task(void *arg)
 
         float temperature;
 
-        esp_err_t err =
-            bmp280_read_temperature(&temperature);
+        esp_err_t err = n_times_read(&temperature);
+
+        if (err == ESP_DISCONNECT) {
+            continue;
+        }
 
         if (err == ESP_OK) {
 
             ESP_LOGI(
                 TAG,
-                "Temperature: %.2f C",
+                "Mean temperature: %.2f C",
                 temperature
             );
 
@@ -157,10 +219,6 @@ static void telemetry_task(void *arg)
                 esp_err_to_name(err)
             );
         }
-
-        vTaskDelay(
-            pdMS_TO_TICKS(PUBLISH_PERIOD_MS)
-        );
     }
 }
 
@@ -191,6 +249,7 @@ static void publish_connect(void)
         DEVICE_ID,
         MQTT_TOPIC_SIGNAL
     );
+    gpio_set_level(LED_BUILTIN, 1);
 }
 
 static void publish_disconnect(void)
@@ -200,6 +259,7 @@ static void publish_disconnect(void)
         DEVICE_ID,
         MQTT_TOPIC_SIGNAL
     );
+    gpio_set_level(LED_BUILTIN, 0);
 }
 
 static void button_task(void *arg)
@@ -239,6 +299,9 @@ void app_main(void)
     button_init();
 
     voltage_init();
+
+    gpio_reset_pin(LED_BUILTIN);
+    gpio_set_direction(LED_BUILTIN, GPIO_MODE_OUTPUT);
 
     // Common network modules.
     ESP_ERROR_CHECK(wifi_manager_init());

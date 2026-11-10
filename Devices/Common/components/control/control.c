@@ -28,7 +28,7 @@ static void set_bits(void)
     );
 }
 
-static bool bits_is_set(void)
+bool bits_is_set(void)
 {
     EventBits_t bits = xEventGroupGetBits(connected_event_group);
     return bits & CONNECTED_BIT;

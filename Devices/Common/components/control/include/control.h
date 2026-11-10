@@ -9,4 +9,6 @@ void do_control(
     void (* set_callback)(void)
 );
 
+bool bits_is_set(void);
+
 #endif
