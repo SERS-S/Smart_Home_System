@@ -18,6 +18,7 @@ static const char *TAG = "temperature sensor";
 #include "button.h"
 #include "control.h"
 #include "time_sync.h"
+#include "publish_connection.h"
 
 #include "bmp280.h"
 
@@ -26,6 +27,7 @@ static const char *TAG = "temperature sensor";
 
 #define MQTT_TOPIC_DATA "telemetry/home/temperature/data"
 #define MQTT_TOPIC_INFO "telemetry/home/temperature/info"
+#define MQTT_TOPIC_SIGNAL "telemetry/home/temperature/signal"
 
 #define PUBLISH_PERIOD_MS 5000
 
@@ -161,72 +163,22 @@ static void telemetry_task(void *arg)
     }
 }
 
-static void publish_connection(int connect)
-{
-    cJSON *root = cJSON_CreateObject();
-
-    if (root == NULL) {
-        ESP_LOGE(TAG, "Failed to create JSON");
-        return;
-    }
-
-    cJSON_AddStringToObject(
-        root,
-        "device_id",
-        DEVICE_ID
-    );
-
-    cJSON_AddStringToObject(
-        root,
-        "signal",
-        connect ? "connect" : "disconnect"
-    );
-
-    char *payload = cJSON_PrintUnformatted(root);
-
-    if (payload == NULL) {
-        ESP_LOGE(TAG, "Failed to serialize JSON");
-
-        cJSON_Delete(root);
-        return;
-    }
-
-    int msg_id = mqtt_manager_publish(
-        MQTT_TOPIC_DATA,
-        payload,
-        1,
-        0
-    );
-
-    if (msg_id >= 0) {
-
-        ESP_LOGI(
-            TAG,
-            "Published to %s: %s",
-            MQTT_TOPIC_DATA,
-            payload
-        );
-
-    } else {
-
-        ESP_LOGE(
-            TAG,
-            "MQTT publish failed"
-        );
-    }
-
-    cJSON_free(payload);
-    cJSON_Delete(root);
-}
-
 static void publish_connect(void)
 {
-    publish_connection(1);
+    publish_connection(
+        1,
+        DEVICE_ID,
+        MQTT_TOPIC_SIGNAL
+    );
 }
 
 static void publish_disconnect(void)
 {
-    publish_connection(0);
+    publish_connection(
+        0,
+        DEVICE_ID,
+        MQTT_TOPIC_SIGNAL
+    );
 }
 
 static void button_task(void *arg)

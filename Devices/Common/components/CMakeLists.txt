@@ -5,6 +5,7 @@ idf_component_register(
         "button/button.c"
         "control/control.c"
         "time_sync/time_sync.c"
+        "publish_connection/publish_connection.c"
 
     INCLUDE_DIRS
         "wifi_manager/include"
@@ -12,6 +13,7 @@ idf_component_register(
         "button/include"
         "control/include"
         "time_sync/include"
+        "publish_connection/include"
 
     REQUIRES
         esp_wifi
@@ -21,4 +23,5 @@ idf_component_register(
         wpa_supplicant
         mqtt
         freertos
+        cjson
 )
