@@ -16,6 +16,7 @@ static const char *TAG = "temperature sensor";
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
 #include "button.h"
+#include "control.h"
 
 #include "bmp280.h"
 
@@ -26,10 +27,6 @@ static const char *TAG = "temperature sensor";
 #define MQTT_TOPIC_INFO "telemetry/home/temperature/info"
 
 #define PUBLISH_PERIOD_MS 5000
-
-
-static EventGroupHandle_t connected_event_group;
-#define CONNECTED_BIT BIT0
 
 static int serial_number = 0;
 
@@ -131,13 +128,7 @@ static void telemetry_task(void *arg)
     (void)arg;
 
     while (1) {
-        xEventGroupWaitBits(
-            connected_event_group,
-            CONNECTED_BIT,
-            pdFALSE,       // Не очищать бит после ожидания.
-            pdTRUE,        // Ждать все указанные биты.
-            portMAX_DELAY  // Ждать бесконечно.
-        );
+        wait_bits();
 
         float temperature;
 
@@ -227,62 +218,31 @@ static void publish_connection(int connect)
     cJSON_Delete(root);
 }
 
+static void publish_connect(void)
+{
+    publish_connection(1);
+}
+
+static void publish_disconnect(void)
+{
+    publish_connection(0);
+}
+
 static void button_task(void *arg)
 {
     (void)arg;
 
     while (1) {
-        if (button_is_pressed()) {
-            int cnt = 1500;
-            int delay = 50;
-
-            while (cnt != 0) {
-                if (!button_is_pressed()) {
-                    break;
-                }
-                vTaskDelay(
-                    pdMS_TO_TICKS(delay)
-                );
-                cnt -= delay;
-            }
-
-            while (button_is_pressed()) {}
-
-            if (cnt == 0) {
-                ESP_LOGI("BUTTON", "Button held");
-
-                EventBits_t bits = xEventGroupGetBits(connected_event_group);
-
-                if (bits & CONNECTED_BIT) {
-                    xEventGroupClearBits(
-                        connected_event_group,
-                        CONNECTED_BIT
-                    );
-
-                    publish_connection(0);
-                } else {
-                    xEventGroupSetBits(
-                        connected_event_group,
-                        CONNECTED_BIT
-                    );
-
-                    publish_connection(1);
-                }
-            }
-        }
+        do_control(
+            button_is_pressed,
+            publish_disconnect,
+            publish_connect
+        );
     }
 }
 
 void app_main(void)
 {
-    connected_event_group = xEventGroupCreate();
-
-    if (connected_event_group == NULL) {
-        ESP_LOGE(
-            TAG,
-            "Failed to create event group"
-        );
-    }
     esp_err_t ret = nvs_flash_init();
 
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -313,11 +273,7 @@ void app_main(void)
 
     mqtt_manager_wait_connected();
 
-    xEventGroupSetBits(
-        connected_event_group,
-        CONNECTED_BIT
-    );
-    publish_connection(1);
+    init_event_group(publish_connect);
 
     if (xTaskCreate(
             telemetry_task,

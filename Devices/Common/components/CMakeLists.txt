@@ -3,11 +3,13 @@ idf_component_register(
         "wifi_manager/wifi_manager.c"
         "mqtt_manager/mqtt_manager.c"
         "button/button.c"
+        "control/control.c"
 
     INCLUDE_DIRS
         "wifi_manager/include"
         "mqtt_manager/include"
         "button/include"
+        "control/include"
 
     REQUIRES
         esp_wifi
