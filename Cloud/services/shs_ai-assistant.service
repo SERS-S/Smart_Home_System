@@ -5,7 +5,7 @@ Description=Smart Home System - AI Assistant placeholder
 StandardOutput=journal
 StandardError=journal
 LogNamespace=ai-assistant
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/bin/shs_cloud_ai-assistant
 RemainAfterExit=yes
 

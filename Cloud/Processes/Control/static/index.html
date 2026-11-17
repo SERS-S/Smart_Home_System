@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>DOMA — Панель умного дома</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/idx.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+    <symbol id="i-temp" viewBox="0 0 24 24"><path d="M14 14V5a3 3 0 0 0-6 0v9a5 5 0 1 0 6 0Z"/><path d="M11 8v9"/></symbol>
+    <symbol id="i-curtain" viewBox="0 0 24 24"><path d="M4 3h16M6 3v18m12-18v18M6 20c4-1 8-1 12 0M6 5c4 2 8 2 12 0M12 5v15"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 1v4m6-4v4m-6 14v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 10-12h-7z"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.99l.05.04-2 3.46-.07-.02a1.8 1.8 0 0 0-1.92-.68l-.08.03h-4.03l-.05-.07a1.8 1.8 0 0 0-1.63-1.16 1.8 1.8 0 0 0-1.5.8l-.05.07-2.9-1.7.01-.08a1.8 1.8 0 0 0-.57-1.95l-.06-.05v-3.38l.07-.04a1.8 1.8 0 0 0 .68-1.92L5.68 9l2.91-1.68.07.05a1.8 1.8 0 0 0 2.02-.12l.05-.04h2.55l.06.04a1.8 1.8 0 0 0 2.03.12l.06-.05L18.35 9l-.03.08a1.8 1.8 0 0 0 .68 1.92l.07.04v3.37Z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-reload" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.4M20 4v7h-7"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="15" rx="2"/><path d="M8 22h8m-4-3v3"/></symbol>
+  </svg>
+  <div class="app">
+    <aside>
+      <a class="brand" href="#overview" aria-label="DOMA — обзор">
+        <span class="brand-icon"><svg class="icon"><use href="#i-home"/></svg></span>
+        <span><span class="brand-name">doma<span style="color:#a8a8a8">.</span></span><span class="brand-caption">SMART HOME SYSTEM</span></span>
+      </a>
+      <div class="nav-label">Рабочее пространство</div>
+      <nav class="nav" aria-label="Основная навигация">
+        <a class="active" href="#overview" data-nav="overview" title="Обзор"><svg class="icon"><use href="#i-grid"/></svg><span>Обзор</span></a>
+        <a href="#curtain" data-nav="curtain" title="Управление"><svg class="icon"><use href="#i-curtain"/></svg><span>Управление</span></a>
+        <a href="#sensors" data-nav="sensors" title="Датчики"><svg class="icon"><use href="#i-temp"/></svg><span>Датчики</span></a>
+        <a href="#automation" data-nav="automation" title="Автоматизация"><svg class="icon"><use href="#i-bolt"/></svg><span>Автоматизация</span></a>
+        <a href="#hub" data-nav="hub" title="Устройства"><svg class="icon"><use href="#i-cpu"/></svg><span>Устройства</span></a>
+        <a href="#" data-open-settings title="Подключение"><svg class="icon"><use href="#i-settings"/></svg><span>Подключение</span></a>
+      </nav>
+      <div class="aside-bottom">
+        <div class="connection-card">
+          <div class="small-title">СОСТОЯНИЕ СИСТЕМЫ</div>
+          <div class="status-line"><i class="dot demo" id="connection-dot"></i><span id="connection-title">Подключение…</span></div>
+          <div class="connection-desc" id="connection-desc">Ожидание данных от Control.</div>
+        </div>
+        <div class="side-foot">DOMA SYSTEM / BUILD 01</div>
+      </div>
+    </aside>
+
+    <main class="main" id="overview">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>МОЙ ДОМ</span><span>/</span><b>ПАНЕЛЬ УПРАВЛЕНИЯ</b></div>
+        <div class="top-actions"><span class="top-time" id="clock">—</span><button class="icon-button" data-open-settings title="Настройки подключения" aria-label="Настройки подключения"><svg class="icon"><use href="#i-settings"/></svg></button></div>
+      </header>
+      <section class="intro">
+        <div>
+          <div class="eyebrow">МОНИТОРИНГ В РЕАЛЬНОМ ВРЕМЕНИ</div>
+          <h1>Дом под контролем<span style="color:#b2b2b2">.</span></h1>
+          <p class="intro-desc">Управление устройствами, датчиками и домашними сценариями — в одном месте.</p>
+        </div>
+        <div class="summary"><span class="summary-number">04</span><span class="summary-text">УСТРОЙСТВА<br>В СИСТЕМЕ</span></div>
+      </section>
+      <div class="section-top"><h2>Панель управления</h2><span id="last-update">ОЖИДАНИЕ ДАННЫХ</span></div>
+
+      <div class="dashboard-grid">
+        <section class="panel scene-card" id="curtain" aria-labelledby="curtain-label">
+          <div class="panel-head"><div><div class="overline">01 / ИСПОЛНИТЕЛЬНОЕ УСТРОЙСТВО</div><h3 id="curtain-label">Управление шторой</h3><div class="panel-sub">Электропривод · мотор</div></div><span class="soft-pill"><i class="dot offline" id="motor-dot"></i><span id="motor-status">Ожидание</span></span></div>
+          <div class="scene-body">
+            <div class="curtain-control">
+              <div><div class="curtain-number"><strong id="curtain-value">—</strong><span>%</span></div><div class="curtain-caption" id="curtain-caption">Положение пока неизвестно</div></div>
+              <div>
+                <div class="range-top"><label for="curtain-range">ЖЕЛАЕМОЕ ОТКРЫТИЕ</label><span id="target-value">—</span></div>
+                <input type="range" id="curtain-range" min="0" max="100" step="1" value="50" style="--range:50%" aria-label="Желаемое открытие шторы" disabled>
+                <div class="scene-buttons"><button class="btn primary" id="open-curtain" disabled><svg class="icon"><use href="#i-arrow"/></svg>Открыть</button><button class="btn" id="close-curtain" disabled><svg class="icon"><use href="#i-down"/></svg>Закрыть</button><button class="btn" id="apply-curtain" disabled>Применить</button></div>
+                <p class="operation-status" id="motor-operation" role="status">Ожидание подключения устройства</p>
+              </div>
+            </div>
+            <div class="window-area" aria-label="Визуализация подтверждённого положения шторы"><div class="window unknown" id="curtain-window"><div class="landscape"></div><div class="shade" id="shade"></div></div></div>
+          </div>
+          <div class="scene-footer"><span id="motor-id">—</span><span>РЕЖИМ: <strong>РУЧНОЙ</strong></span></div>
+        </section>
+        <div class="readings" id="sensors">
+          <section class="panel reading-card temp-card" aria-labelledby="temp-title">
+            <div class="reading-content"><div class="panel-head"><div><div class="overline">02 / ДАТЧИК</div><h3 id="temp-title">Температура</h3></div><span class="reading-icon"><svg class="icon"><use href="#i-temp"/></svg></span></div>
+              <div class="reading-number"><strong id="temp-value">—</strong><span>°C</span><span class="sensor-status" id="temp-status">Ожидание</span></div>
+              <div class="sensor-meta"><span id="temp-battery">Заряд: —</span><span id="temp-voltage">Напряжение: —</span></div>
+            </div>
+            <figure class="chart"><svg id="temp-chart" viewBox="0 0 360 72" preserveAspectRatio="none" role="img" aria-label="Пока нет измерений"><path class="chart-fill"/><path class="chart-line"/><circle class="chart-point" r="3" hidden/></svg><figcaption id="temp-history">Пока нет измерений</figcaption></figure>
+          </section>
+          <section class="panel reading-card light-card" aria-labelledby="light-title">
+            <div class="reading-content"><div class="panel-head"><div><div class="overline">03 / ДАТЧИК</div><h3 id="light-title">Освещённость</h3></div><span class="reading-icon"><svg class="icon"><use href="#i-light"/></svg></span></div>
+              <div class="reading-number"><strong id="light-value">—</strong><span>лк</span><span class="sensor-status" id="light-status">Ожидание</span></div>
+              <div class="sensor-meta"><span id="light-battery">Заряд: —</span><span id="light-voltage">Напряжение: —</span></div>
+            </div>
+            <figure class="chart"><svg id="light-chart" viewBox="0 0 360 72" preserveAspectRatio="none" role="img" aria-label="Пока нет измерений"><path class="chart-fill"/><path class="chart-line"/><circle class="chart-point" r="3" hidden/></svg><figcaption id="light-history">Пока нет измерений</figcaption></figure>
+          </section>
+        </div>
+      </div>
+      <div class="secondary-grid">
+        <section class="panel hub-card" id="hub">
+          <div class="hub-header"><div class="hub-title-group"><span class="hub-art"><svg class="icon" style="width:26px;height:26px"><use href="#i-cpu"/></svg></span><div><div class="overline">04 / ЦЕНТРАЛЬНОЕ УСТРОЙСТВО</div><h3>Хаб управления</h3></div></div><span class="soft-pill"><i class="dot offline" id="hab-dot"></i><span id="hab-status">Ожидание</span></span></div>
+          <div class="hub-spec"><div><span>ПРОШИВКА</span><strong id="hab-version">—</strong></div><div><span>ЗАРЯД</span><strong id="hab-battery">—</strong></div><div><span>НАПРЯЖЕНИЕ</span><strong id="hab-voltage">—</strong></div></div>
+          <div class="switches"><label class="switch-item" for="mic-toggle"><span><b>Микрофон</b><small id="mic-state">Состояние неизвестно</small></span><input class="toggle" type="checkbox" id="mic-toggle" disabled aria-label="Включить микрофон"></label></div>
+          <div class="operation-status" id="hab-operation" role="status">Ожидание подключения устройства</div>
+          <div class="device-caption" id="hab-id">—</div>
+        </section>
+        <section class="panel voice-card" id="voice">
+          <div class="panel-head"><div><div class="overline">ГОЛОСОВОЕ УПРАВЛЕНИЕ</div><h3>AI-ассистент</h3></div><span class="soft-pill">Скоро</span></div>
+          <div class="voice-main"><span class="wave paused" id="voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span><b id="assistant-status">Микрофон не подключён</b><small>Голосовые команды появятся здесь</small></span></div>
+          <p class="placeholder-copy">Дом будет понимать вас с полуслова.<br>А пока управляйте устройствами с панели.</p>
+          <div class="command-form"><input class="command-input" placeholder="Ассистент готовится к запуску…" aria-label="Ассистент пока недоступен" disabled><button class="btn" disabled aria-label="Отправка пока недоступна"><svg class="icon"><use href="#i-send"/></svg></button></div>
+        </section>
+      </div>
+      <div class="bottom-grid">
+        <section class="panel automation-card" id="automation">
+          <div class="panel-head"><div><div class="overline">СЦЕНАРИИ</div><h3>Автоматизация</h3><div class="panel-sub">Дом, который заботится о вас</div></div><span class="reading-icon"><svg class="icon"><use href="#i-bolt"/></svg></span></div>
+          <div class="automation-placeholder"><span class="placeholder-mark" aria-hidden="true"><svg class="icon"><use href="#i-bolt"/></svg></span><strong>Ваши сценарии — скоро здесь</strong><p>Управление по расписанию и показаниям датчиков.<br>Пока всё под вашим контролем.</p><span class="soft-pill">В разработке</span></div>
+        </section>
+        <section class="panel events-card" id="events"><div class="panel-head"><div><div class="overline">АКТИВНОСТЬ</div><h3>Журнал событий</h3></div><button class="btn small" id="refresh-data"><svg class="icon" style="width:14px;height:14px"><use href="#i-reload"/></svg>Обновить</button></div><div class="events-list" id="events-list" aria-live="polite"><p class="empty-state">Событий пока нет</p></div></section>
+      </div>
+      <footer class="page-footer"><span id="footer-status">ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ</span><span>DOMA / УМНЫЙ ДОМ</span></footer>
+    </main>
+  </div>
+  <div class="toast" role="status" id="toast"></div>
+  <dialog id="settings-dialog"><div class="dialog-content"><div class="dialog-head"><div><div class="overline">ПОДКЛЮЧЕНИЕ</div><h2>Состояние системы</h2></div><button class="icon-button" id="close-settings" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button></div><dl class="connection-details"><div><dt>Панель управления</dt><dd id="panel-connection">Подключение…</dd></div><div><dt>MQTT-брокер</dt><dd id="broker-connection">Ожидание</dd></div><div><dt>Последнее обновление</dt><dd id="connection-updated">—</dd></div></dl><p class="dialog-desc">Панель обновляется автоматически при изменении состояния устройств.</p></div></dialog>
+</body>
+</html>

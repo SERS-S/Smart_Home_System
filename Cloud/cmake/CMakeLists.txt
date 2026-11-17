@@ -7,7 +7,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(PROCESSES
     AI-Assistant
     Api
-    Control
     Telemetry
     Voice
 )
@@ -23,6 +22,8 @@ foreach(process IN LISTS PROCESSES)
     target_compile_features(${target} PRIVATE cxx_std_17)
     install(TARGETS ${target} RUNTIME DESTINATION bin)
 endforeach()
+
+add_subdirectory("../Processes/Control" "${CMAKE_CURRENT_BINARY_DIR}/control")
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)

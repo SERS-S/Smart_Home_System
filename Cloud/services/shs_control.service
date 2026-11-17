@@ -1,13 +1,16 @@
 [Unit]
-Description=Smart Home System - Control placeholder
+Description=Smart Home System - Control
+After=network-online.target shs_mosquitto.service
+Wants=network-online.target shs_mosquitto.service
 
 [Service]
 StandardOutput=journal
 StandardError=journal
 LogNamespace=control
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/bin/shs_cloud_control
-RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

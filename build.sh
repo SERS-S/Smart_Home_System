@@ -34,7 +34,7 @@ case "$(uname -s)" in
         brew_env="$("$brew_path" shellenv)"
         eval "$brew_env"
 
-        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass; do
+        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass go; do
             if ! brew list --formula --versions "$formula" >/dev/null 2>&1; then
                 brew install "$formula"
             fi
@@ -93,7 +93,7 @@ case "$(uname -s)" in
         brew_env="$("$brew_path" shellenv)"
         eval "$brew_env"
 
-        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass; do
+        for formula in libgcrypt glib pixman sdl2 libslirp dfu-util cmake python zig sshpass go; do
             if ! brew list --formula --versions "$formula" >/dev/null 2>&1; then
                 brew install "$formula"
             fi
