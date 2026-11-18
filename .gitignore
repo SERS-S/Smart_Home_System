@@ -12,6 +12,7 @@ scripts/prepare_intellisense.py
 scripts/.venv-voice/
 scripts/__pycache__/
 scripts/test_voice_stream.py
+Cloud/Processes/AI-Assistant/README.md
 
 # build artifact
 Devices/*/managed_components/

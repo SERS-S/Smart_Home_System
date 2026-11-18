@@ -289,6 +289,7 @@ cloud_deploy() {
         local binary
         local binary_type
         local binaries=("$build_dir"/shs_cloud_*)
+        local upload_binaries=()
         for binary in "${binaries[@]}"; do
             if [[ ! -f "$binary" || ! -x "$binary" ]]; then
                 printf ' !> Missing executable: %s\n' "$binary" >&2
@@ -299,7 +300,32 @@ cloud_deploy() {
                 printf ' !> Linux deployment requires x86_64 ELF binaries: %s. Rebuild Cloud with the Linux toolchain.\n' "$binary" >&2
                 exit 1
             fi
+            if [[ "${binary##*/}" != shs_cloud_ai-assistant ]]; then
+                upload_binaries+=("$binary")
+            fi
         done
+
+        local ai_dir="$cloud_dir/Processes/AI-Assistant/.cache/linux-runtime"
+        local ai_archive="$cloud_dir/Processes/AI-Assistant/.cache/ai-assistant-linux.tar.gz"
+        for binary in "$ai_dir/shs_cloud_ai-assistant" "$ai_dir/bin/mosquitto_pub" \
+                      "$ai_dir/runtime/node/node_modules/node/bin/node"; do
+            binary_type="$(LC_ALL=C file -Lb "$binary")"
+            if [[ ! -x "$binary" || "$binary_type" != 'ELF 64-bit LSB'* || "$binary_type" != *x86-64* ]]; then
+                printf ' !> Missing Linux/x64 AI runtime: %s. Rebuild Cloud first.\n' "$binary" >&2
+                exit 1
+            fi
+        done
+        if [[ ! -s "$ai_dir/runtime/node_modules/openclaw/openclaw.mjs" || \
+              ! -s "$ai_dir/openclaw/workspace/skills/curtain-control/SKILL.md" ]]; then
+            printf ' !> Incomplete AI-Assistant runtime. Rebuild Cloud first.\n' >&2
+            exit 1
+        fi
+        local archive_command=(tar)
+        if [[ "$(uname -s)" == Darwin ]]; then
+            archive_command=(/usr/bin/tar --no-mac-metadata --no-xattrs --no-fflags --no-acls)
+        fi
+        run_step 'Упаковка AI-Assistant' env COPYFILE_DISABLE=1 \
+            "${archive_command[@]}" -czf "$ai_archive" -C "$ai_dir" .
 
         local service_file
         for service_file in "$cloud_dir"/services/*.service; do
@@ -347,8 +373,8 @@ cloud_deploy() {
             glibc_version="$(getconf GNU_LIBC_VERSION)"
             printf ' > > Server runtime: %s\n' "$glibc_version"
             IFS=. read -r glibc_major glibc_minor glibc_patch <<< "${glibc_version##* }"
-            if (( glibc_major < 2 || (glibc_major == 2 && glibc_minor < 25) )); then
-                printf 'Cloud requires glibc 2.25 or newer.\n' >&2
+            if (( glibc_major < 2 || (glibc_major == 2 && glibc_minor < 34) )); then
+                printf 'AI-Assistant runtime requires glibc 2.34 or newer.\n' >&2
                 exit 1
             fi
             command -v systemctl >/dev/null
@@ -366,7 +392,7 @@ cloud_deploy() {
                     exit 1
                 fi
             done
-            install -d /etc/mosquitto /usr/local/bin /usr/local/lib/smart-home /usr/local/share/smart-home/models
+            install -d /etc/mosquitto /usr/local/bin /usr/local/lib/smart-home/ai-assistant /usr/local/share/smart-home/models
 EOF
 
         printf " > > Stopping Cloud services\n"
@@ -386,7 +412,19 @@ EOF
         printf " > > Uploading Cloud binaries to remote server\n"
         run_step 'Загрузка бинарников' \
             scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
-            "$build_dir"/shs_cloud_* "$REMOTE_USER@$REMOTE_HOST:/usr/local/bin/"
+            "${upload_binaries[@]}" "$REMOTE_USER@$REMOTE_HOST:/usr/local/bin/"
+
+        run_step 'Загрузка AI-Assistant' \
+            scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \
+            "$ai_archive" "$REMOTE_USER@$REMOTE_HOST:/usr/local/lib/smart-home/"
+        sshpass -p "$PASSWORD" ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" 'bash -s' <<'EOF'
+            set -euo pipefail
+            ai_dir=/usr/local/lib/smart-home/ai-assistant
+            # Preserve generated configuration, request ledger and dialogue history.
+            rm -rf "$ai_dir/runtime" "$ai_dir/openclaw/workspace/skills"
+            tar -xzf /usr/local/lib/smart-home/ai-assistant-linux.tar.gz -C "$ai_dir"
+            rm /usr/local/lib/smart-home/ai-assistant-linux.tar.gz
+EOF
 
         run_step 'Загрузка динамических библиотек' \
             scp -S "$SCRIPT_DIR/scripts/sshpass_ssh.sh" -P "$REMOTE_PORT" \

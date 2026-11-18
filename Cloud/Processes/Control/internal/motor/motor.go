@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"smart-home/control/internal/command"
 	"smart-home/control/internal/config"
@@ -27,16 +28,18 @@ func (s State) Copy() State {
 
 type Device struct {
 	*device.Inbox
-	state    State
-	tracker  *command.Tracker
-	cfg      config.Config
-	onChange func(State, []string)
-	logger   *slog.Logger
+	state     State
+	tracker   *command.Tracker
+	cfg       config.Config
+	onChange  func(State, []string)
+	logger    *slog.Logger
+	seen      map[uint64]string
+	seenOrder []uint64
 }
 
 func New(c config.Config, publisher command.Publisher, onChange func(State, []string), logger *slog.Logger) *Device {
 	d := &Device{Inbox: device.NewInbox(c.QueueSize), state: State{Common: device.Common{DeviceID: c.MotorID}, State: "unknown"},
-		tracker: command.New(publisher), cfg: c, onChange: onChange, logger: logger}
+		tracker: command.New(publisher), cfg: c, onChange: onChange, logger: logger, seen: make(map[uint64]string)}
 	if onChange != nil {
 		onChange(d.snapshot(), []string{"device_id", "connected", "connection_known", "state"})
 	}
@@ -71,7 +74,7 @@ func (d *Device) Run(ctx context.Context) {
 				d.tracker.Broker(*event.Online)
 			}
 			if event.Message != nil {
-				if err := d.apply(*event.Message); err != nil {
+				if err := d.apply(ctx, *event.Message); err != nil {
 					d.logger.Warn("Ignoring invalid motor message", "topic", event.Message.Topic, "error", err)
 				}
 			}
@@ -122,12 +125,50 @@ func (d *Device) request(ctx context.Context, request *device.Request) (device.R
 		})
 	if err == nil {
 		d.state.TargetLevel = &level
+		d.remember(id, fmt.Sprintf("%s:%d", request.Action, level))
 	}
 	return device.Result{OperationID: id}, err
 }
 
-func (d *Device) apply(m device.Message) error {
+func (d *Device) remember(id uint64, intent string) {
+	d.seen[id] = intent
+	d.seenOrder = append(d.seenOrder, id)
+	if len(d.seenOrder) > d.cfg.QueueSize {
+		delete(d.seen, d.seenOrder[0])
+		d.seenOrder = d.seenOrder[1:]
+	}
+}
+
+func (d *Device) apply(ctx context.Context, m device.Message) error {
 	switch m.Topic {
+	case d.cfg.Topics.Motor + "/command/up", d.cfg.Topics.Motor + "/command/down":
+		if m.Retained {
+			return nil
+		}
+		var incoming struct {
+			ID    uint64 `json:"operation_id"`
+			Level *int   `json:"level"`
+		}
+		if err := command.DecodeFeedback(m.Payload, &incoming); err != nil {
+			return err
+		}
+		if incoming.ID == 0 || incoming.ID > (1<<53)-1 || incoming.Level == nil || *incoming.Level < 0 || *incoming.Level > 100 {
+			return device.ErrInvalidCommand
+		}
+		action := "down"
+		if m.Topic == d.cfg.Topics.Motor+"/command/up" {
+			action = "up"
+		}
+		intent := fmt.Sprintf("%s:%d", action, *incoming.Level)
+		if old, seen := d.seen[incoming.ID]; seen {
+			if old != intent {
+				return fmt.Errorf("motor operation_id reused with another command")
+			}
+			return nil
+		}
+		d.remember(incoming.ID, intent)
+		d.tracker.Observe(ctx, incoming.ID, action, d.cfg.MotorRetry.Interval*time.Duration(d.cfg.MotorRetry.Attempts))
+		d.state.TargetLevel = device.Clone(incoming.Level)
 	case d.cfg.Topics.Motor + "/info":
 		info, err := device.ParseInfo(m.Payload, d.state.DeviceID)
 		if err != nil {

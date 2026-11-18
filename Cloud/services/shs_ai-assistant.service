@@ -1,13 +1,18 @@
 [Unit]
-Description=Smart Home System - AI Assistant placeholder
+Description=Smart Home System - AI Assistant
+After=network-online.target shs_mosquitto.service
+Wants=network-online.target shs_mosquitto.service
 
 [Service]
 StandardOutput=journal
 StandardError=journal
 LogNamespace=ai-assistant
 Type=simple
-ExecStart=/usr/local/bin/shs_cloud_ai-assistant
-RemainAfterExit=yes
+WorkingDirectory=/usr/local/lib/smart-home/ai-assistant
+Environment="PATH=/usr/local/lib/smart-home/ai-assistant/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/usr/local/lib/smart-home/ai-assistant/shs_cloud_ai-assistant
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

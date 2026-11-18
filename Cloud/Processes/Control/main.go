@@ -17,6 +17,7 @@ import (
 
 	"smart-home/control/internal/config"
 	"smart-home/control/internal/hab"
+	"smart-home/control/internal/ivus"
 	"smart-home/control/internal/journal"
 	"smart-home/control/internal/light"
 	"smart-home/control/internal/motor"
@@ -49,7 +50,8 @@ func run(ctx context.Context, c config.Config, logger *slog.Logger) error {
 		web.OnHabChanged(state, fields)
 		recordHabEvent(ctx, journalWorker, state, fields)
 	}, logger)
-	voiceWorker := voice.New(c.QueueSize, os.Stdout, logger)
+	ivusClient := ivus.New(c, web.Snapshot)
+	voiceWorker := voice.New(c.QueueSize, ivusClient.Forward, logger)
 	web.SetCommands(webserver.Commands{StartVoice: habDevice.StartVoice, StopVoice: habDevice.StopVoice,
 		MotorUp: motorDevice.Up, MotorDown: motorDevice.Down, MotorUpTo: motorDevice.UpTo, MotorDownTo: motorDevice.DownTo})
 	for _, suffix := range []string{"/data", "/info", "/signal"} {
@@ -58,7 +60,7 @@ func run(ctx context.Context, c config.Config, logger *slog.Logger) error {
 	}
 	transport.Route(c.Topics.Light+"/data", mqtt.Receivers{lightDevice, habDevice})
 	transport.Route(c.Topics.Temperature+"/data", mqtt.Receivers{temperatureDevice, habDevice})
-	for _, suffix := range []string{"/info", "/signal", "/command/feedback"} {
+	for _, suffix := range []string{"/info", "/signal", "/command/feedback", "/command/up", "/command/down"} {
 		transport.Route(c.Topics.Motor+suffix, motorDevice)
 	}
 	for _, suffix := range []string{"/info", "/signal", "/voice/command/feedback"} {

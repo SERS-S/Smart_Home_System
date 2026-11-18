@@ -32,7 +32,7 @@ func TestCompiledSettings(t *testing.T) {
 	if c.MQTTAddress != "tcp://127.0.0.1:1883" || c.HabRetry.Attempts != 45 || c.HabRetry.Interval != 4*time.Second || c.MotorRetry.Attempts != 30 || c.MotorRetry.Interval != 2*time.Second {
 		t.Fatalf("wrong compiled settings: %+v", c)
 	}
-	if len(c.Topics.Subscriptions()) != 13 {
+	if len(c.Topics.Subscriptions()) != 15 {
 		t.Fatal("missing subscriptions")
 	}
 	if _, err := Parse(""); err == nil {

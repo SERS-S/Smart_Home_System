@@ -45,6 +45,7 @@ type Tracker struct {
 	public      State
 	active      bool
 	ackRequired bool
+	observed    bool
 	policy      config.Retry
 	publisher   Publisher
 	topic       string
@@ -92,6 +93,7 @@ func (t *Tracker) Start(ctx context.Context, action, topic string, policy config
 	t.ctx, t.cancel = context.WithCancel(ctx)
 	t.public = State{ID: id, Action: action, Status: "pending", MaxAttempts: policy.Attempts}
 	t.active, t.ackRequired, t.policy = true, ack, policy
+	t.observed = false
 	t.topic, t.payload = topic, body
 	t.Tick()
 	return id, nil
@@ -134,6 +136,10 @@ func (t *Tracker) Tick() {
 		t.Cancel()
 		return
 	}
+	if t.observed {
+		t.finish("timed_out")
+		return
+	}
 	if !t.publisher.Ready() {
 		t.schedule()
 		return
@@ -163,6 +169,9 @@ func (t *Tracker) Broker(online bool) {
 }
 
 func (t *Tracker) HandleResult(result PublishResult) {
+	if t.observed {
+		return
+	}
 	if !t.active || result.ID != t.public.ID || result.Attempt != t.public.Attempts {
 		return
 	}
@@ -174,6 +183,15 @@ func (t *Tracker) HandleResult(result PublishResult) {
 	} else if !t.ackRequired {
 		t.finish("sent") // Broker delivery, not device completion.
 	}
+}
+
+// Observe adopts an externally published operation without echoing/retrying it.
+func (t *Tracker) Observe(ctx context.Context, id uint64, action string, timeout time.Duration) {
+	t.Cancel()
+	t.ctx, t.cancel = context.WithCancel(ctx)
+	t.public = State{ID: id, Action: action, Status: "pending", Attempts: 1, MaxAttempts: 1}
+	t.active, t.ackRequired, t.observed = true, true, true
+	t.timer = time.NewTimer(timeout)
 }
 
 func (t *Tracker) Matches(id uint64) bool { return t.active && t.public.ID == id }

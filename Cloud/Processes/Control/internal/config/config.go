@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ func (t Topics) Subscriptions() []string {
 		}
 	}
 	return append(result, t.Motor+"/command/feedback", t.Motor+"/info", t.Motor+"/signal",
+		t.Motor+"/command/up", t.Motor+"/command/down",
 		t.Hab+"/voice/command/feedback", t.Hab+"/info", t.Hab+"/signal", t.Voice)
 }
 
@@ -50,6 +52,9 @@ type Config struct {
 	Audio                                  Audio
 	LightID, TemperatureID, MotorID, HabID string
 	Topics                                 Topics
+	IvusEnabled                            bool
+	IvusSocketPath                         string
+	IvusWriteTimeout, IvusDedupWindow      time.Duration
 }
 
 // Parse accepts only the settings explicitly selected by CMake, not the whole .env.
@@ -92,6 +97,21 @@ func Parse(compiled string) (Config, error) {
 	c.ClientID = text("CONTROL_MQTT_CLIENT_ID")
 	c.QoS = byte(number("CONTROL_MQTT_QOS", 0, 2))
 	c.QueueSize = number("CONTROL_QUEUE_SIZE", 1, 65536)
+	if value := values["CONTROL_IVUS_ENABLED"]; value != "" {
+		var err error
+		c.IvusEnabled, err = strconv.ParseBool(value)
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("CONTROL_IVUS_ENABLED must be true or false")
+		}
+		if c.IvusEnabled {
+			c.IvusSocketPath = text("CONTROL_IVUS_SOCKET_PATH")
+			if !filepath.IsAbs(c.IvusSocketPath) && firstErr == nil {
+				firstErr = fmt.Errorf("CONTROL_IVUS_SOCKET_PATH must be absolute after CMake configuration")
+			}
+			c.IvusWriteTimeout = time.Duration(number("CONTROL_IVUS_WRITE_TIMEOUT_MS", 1, 60000)) * time.Millisecond
+			c.IvusDedupWindow = time.Duration(number("CONTROL_IVUS_DEDUP_WINDOW_MS", 0, 60000)) * time.Millisecond
+		}
+	}
 	c.HistoryPoints = number("CONTROL_HISTORY_POINTS", 1, 10000)
 	c.JournalLimit = number("CONTROL_JOURNAL_LIMIT", 1, 10000)
 	c.PublishTimeout = time.Duration(number("CONTROL_PUBLISH_TIMEOUT_MS", 1, 60000)) * time.Millisecond

@@ -5,7 +5,6 @@ project(SmartHomeSystemCloud LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PROCESSES
-    AI-Assistant
     Api
     Telemetry
     Voice
@@ -132,6 +131,8 @@ set_target_properties(shs_cloud_voice PROPERTIES
     BUILD_WITH_INSTALL_RPATH TRUE
     INSTALL_RPATH "$ORIGIN/lib;$ORIGIN/../lib/smart-home"
 )
+
+add_subdirectory("../Processes/AI-Assistant" "${CMAKE_CURRENT_BINARY_DIR}/ai-assistant")
 
 # Run on every build so deleting build/lib does not leave an otherwise
 # up-to-date executable without its runtime dependency.

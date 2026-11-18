@@ -1,0 +1,7 @@
+{
+  "name": "ivus-local-node",
+  "private": true,
+  "dependencies": {
+    "node": "24.22.3"
+  }
+}

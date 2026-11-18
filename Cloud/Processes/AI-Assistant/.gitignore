@@ -1,0 +1,9 @@
+/.cache/
+/.runtime/
+/bin/
+/runtime/node_modules/
+/runtime/node/node_modules/
+/openclaw/generated/
+/openclaw/workspace/AGENTS.md
+/.env.local
+__pycache__/

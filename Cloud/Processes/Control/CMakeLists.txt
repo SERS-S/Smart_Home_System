@@ -17,11 +17,16 @@ set(control_variables
     CONTROL_HAB_SAMPLE_RATE CONTROL_HAB_FRAGMENT_DURATION_MS CONTROL_HAB_FRAGMENT_SIZE
     CONTROL_TOPIC_LIGHT CONTROL_TOPIC_TEMPERATURE CONTROL_TOPIC_MOTOR
     CONTROL_TOPIC_HAB CONTROL_TOPIC_VOICE CONTROL_TOPIC_JOURNAL
+    CONTROL_IVUS_ENABLED CONTROL_IVUS_SOCKET_PATH
+    CONTROL_IVUS_WRITE_TIMEOUT_MS CONTROL_IVUS_DEDUP_WINDOW_MS
 )
 set(control_config "{")
 set(control_separator "")
 foreach(variable IN LISTS control_variables)
     set(value "$ENV{${variable}}")
+    if(variable STREQUAL "CONTROL_IVUS_SOCKET_PATH" AND NOT "${value}" STREQUAL "" AND NOT IS_ABSOLUTE "${value}")
+        get_filename_component(value "${value}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
     if("${value}" STREQUAL "" OR "${value}" MATCHES "[^A-Za-z0-9_./:-]")
         message(FATAL_ERROR "${variable} must be set in Cloud/.env and contain only letters, digits or _./:-")
     endif()
